@@ -49,8 +49,8 @@ Verify: timing-model tests; hardware readback after 2026-10-15.
 
 ## Task 7: Frame presentation
 
-- [ ] Track front/back ownership and committed writes.
-- [ ] Swap only at VBlank and invalidate stale prefetch data.
+- [x] Track front/back ownership and committed writes.
+- [x] Swap only at VBlank and invalidate stale prefetch data.
 
 Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 
