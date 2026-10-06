@@ -45,6 +45,14 @@ gcc -std=c11 -Wall -Wextra -Werror \
   firmware/rp2040/src/accelerator_protocol.c \
   -o build/firmware/test_accelerator_protocol
 ./build/firmware/test_accelerator_protocol
+
+gcc -std=c11 -Wall -Wextra -Werror \
+  -Ifirmware/rp2040/include \
+  firmware/rp2040/test/test_pong.c \
+  firmware/rp2040/src/pong.c \
+  firmware/rp2040/src/accelerator_protocol.c \
+  -o build/firmware/test_pong
+./build/firmware/test_pong
 "@
 
 & $bash -lc $command

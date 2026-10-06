@@ -56,7 +56,8 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 
 ## Task 8: Board integration and Pong
 
+- [x] Build a portable RP2040 Pong model and graphics-command stream.
 - [ ] Verify pins/clocks, LED bring-up, DVI/TMDS output, and full SDRAM scanout.
-- [ ] Build Pong and record timing, utilization, bandwidth, and error counters.
+- [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 
 Verify: reproducible hardware procedure and saved reports.
