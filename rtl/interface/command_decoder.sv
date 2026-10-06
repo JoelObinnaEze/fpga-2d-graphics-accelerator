@@ -164,7 +164,7 @@ module command_decoder (
                     EXPECT_PAYLOAD: begin
                         payload[payload_index] <= byte_data;
                         running_crc <= crc8_next(running_crc, byte_data);
-                        if (payload_index + 1'b1 == payload_length) begin
+                        if (8'(payload_index) + 8'd1 == payload_length) begin
                             state <= EXPECT_CRC;
                         end else begin
                             payload_index <= payload_index + 1'b1;

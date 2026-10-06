@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 package command_pkg;
     typedef enum logic [7:0] {
         OP_CLEAR       = 8'h01,

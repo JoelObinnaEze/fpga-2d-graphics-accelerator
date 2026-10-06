@@ -24,7 +24,7 @@ module spi_mode0_slave (
     logic cs_previous;
     logic mosi_meta;
     logic mosi_sync;
-    logic [7:0] receive_shift;
+    logic [6:0] receive_shift;
     logic [7:0] transmit_shift;
     logic [2:0] bit_count;
     logic sclk_rising;
@@ -86,9 +86,9 @@ module spi_mode0_slave (
                 bit_count <= '0;
             end else if (!cs_sync) begin
                 if (sclk_rising) begin
-                    receive_shift <= {receive_shift[6:0], mosi_sync};
+                    receive_shift <= {receive_shift[5:0], mosi_sync};
                     if (bit_count == 3'd7) begin
-                        byte_data <= {receive_shift[6:0], mosi_sync};
+                        byte_data <= {receive_shift, mosi_sync};
                         byte_valid <= 1'b1;
                         downstream_overflow <= !byte_ready;
                         bit_count <= '0;

@@ -26,8 +26,10 @@ module tb_spi_command;
     logic fifo_valid;
     logic fifo_ready;
     logic [$bits(command_t)-1:0] fifo_data;
+    logic [1:0] fifo_count;
     command_t fifo_command;
     int partial_error_count;
+    int protocol_error_pulse_count;
 
     initial begin
         clk = 1'b0;
@@ -57,16 +59,22 @@ module tb_spi_command;
     ) fifo (
         .clk, .rst,
         .in_valid(decoder_valid), .in_ready(decoder_ready), .in_data(decoder_command),
-        .out_valid(fifo_valid), .out_ready(fifo_ready), .out_data(fifo_data), .count()
+        .out_valid(fifo_valid), .out_ready(fifo_ready), .out_data(fifo_data),
+        .count(fifo_count)
     );
 
     always_comb fifo_command = command_t'(fifo_data);
 
     always_ff @(posedge clk) begin
-        if (rst)
+        if (rst) begin
             partial_error_count <= 0;
-        else if (partial_byte_error)
-            partial_error_count <= partial_error_count + 1;
+            protocol_error_pulse_count <= 0;
+        end else begin
+            if (partial_byte_error)
+                partial_error_count <= partial_error_count + 1;
+            if (protocol_error)
+                protocol_error_pulse_count <= protocol_error_pulse_count + 1;
+        end
     end
 
     function automatic logic [7:0] crc8(
@@ -156,10 +164,11 @@ module tb_spi_command;
             #1;
             if (fifo_valid) break;
         end
-        if (!fifo_valid)
+        if (!fifo_valid || fifo_count != 1)
             $fatal(1, "SPI command did not reach the FIFO");
         if (fifo_command.opcode != OP_CLEAR || fifo_command.sequence_id != 8'h42 ||
-            fifo_command.arg0 != 16'hf81f)
+            fifo_command.arg0 != 16'hf81f || fifo_command.arg1 != 0 ||
+            fifo_command.arg2 != 0 || fifo_command.arg3 != 0 || fifo_command.arg4 != 0)
             $fatal(1, "SPI command payload mismatch");
         if (downstream_overflow)
             $fatal(1, "unexpected downstream overflow");
@@ -177,7 +186,8 @@ module tb_spi_command;
             #60; spi_sclk = 1'b0;
         end
         spi_end();
-        if (partial_error_count != 1 || protocol_error_count != 1)
+        if (partial_error_count != 1 || protocol_error_count != 1 ||
+            protocol_error_pulse_count != 1)
             $fatal(1, "partial SPI byte/frame was not rejected exactly once");
 
         $display("PASS: oversampled SPI mode-0 receive, status transmit, and partial-frame rejection");

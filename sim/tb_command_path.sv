@@ -18,6 +18,7 @@ module tb_command_path;
     logic fifo_valid;
     logic fifo_ready;
     logic [$bits(command_t)-1:0] fifo_data;
+    logic [1:0] fifo_count;
     command_t fifo_command;
 
     initial begin
@@ -45,7 +46,7 @@ module tb_command_path;
         .out_valid(fifo_valid),
         .out_ready(fifo_ready),
         .out_data(fifo_data),
-        .count()
+        .count(fifo_count)
     );
 
     always_comb fifo_command = command_t'(fifo_data);
@@ -182,7 +183,7 @@ module tb_command_path;
 
         send_rect(8'h11, 16'd2, 16'd3, 16'd4, 16'd5, 16'hf800);
         send_present(8'h12);
-        if (decoder_ready)
+        if (decoder_ready || fifo_count != 2)
             $fatal(1, "FIFO accepted a third command while full");
         expect_command(OP_DRAW_RECT, 8'h11, 16'd2, 16'd3, 16'd4, 16'd5, 16'hf800);
         expect_command(OP_PRESENT, 8'h12, 0, 0, 0, 0, 0);

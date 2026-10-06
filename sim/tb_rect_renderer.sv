@@ -83,17 +83,18 @@ module tb_rect_renderer;
             logic [15:0] transfer_pixel;
 
             @(negedge clk);
-            if (held && (write_x != held_x || write_y != held_y || write_pixel != held_pixel))
+            if (held && (int'(write_x) != held_x || int'(write_y) != held_y ||
+                         write_pixel != held_pixel))
                 $fatal(1, "write payload changed while stalled");
 
             write_ready = cycles % 3 != 0;
             transfer = write_valid && write_ready;
-            transfer_x = write_x;
-            transfer_y = write_y;
+            transfer_x = int'(write_x);
+            transfer_y = int'(write_y);
             transfer_pixel = write_pixel;
             held = write_valid && !write_ready;
-            held_x = write_x;
-            held_y = write_y;
+            held_x = int'(write_x);
+            held_y = int'(write_y);
             held_pixel = write_pixel;
 
             @(posedge clk);
