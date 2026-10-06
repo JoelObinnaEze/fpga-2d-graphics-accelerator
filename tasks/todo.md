@@ -41,7 +41,8 @@ Verify: focused sprite test plus the full test script.
 ## Task 6: SDRAM and arbitration
 
 - [ ] Verify the exact SDRAM component before fixing timing parameters.
-- [ ] Implement initialization, refresh, bursts, read/write FIFOs, and arbitration.
+- [x] Implement portable scanout/write/refresh arbitration with bounded write bursts.
+- [ ] Implement controller initialization, refresh timing, bursts, and read/write FIFOs.
 - [ ] Prove timing legality, readback, scanout priority, and renderer progress.
 
 Verify: timing-model tests; hardware readback after 2026-10-15.
