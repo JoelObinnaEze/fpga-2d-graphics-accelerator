@@ -25,8 +25,8 @@ Verify: focused rectangle test plus the full test script.
 
 ## Task 4: Host command link
 
-- [ ] Freeze packet/status protocol.
-- [ ] Implement command FIFO, decoder, SPI receive path, and RP2040 encoder.
+- [x] Freeze packet/status protocol.
+- [x] Implement command FIFO, decoder, SPI receive path, and RP2040 encoder.
 - [ ] Prove invalid, partial, full-queue, and back-to-back behavior.
 
 Verify: protocol RTL tests and firmware host tests.

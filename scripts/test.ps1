@@ -34,6 +34,14 @@ run_test tb_framebuffer_scanout sim/framebuffer.f
 run_test tb_rect_renderer sim/rect_renderer.f
 run_test tb_command_path sim/command_path.f
 run_test tb_spi_command sim/spi_command.f
+
+mkdir -p build/firmware
+gcc -std=c11 -Wall -Wextra -Werror \
+  -Ifirmware/rp2040/include \
+  firmware/rp2040/test/test_accelerator_protocol.c \
+  firmware/rp2040/src/accelerator_protocol.c \
+  -o build/firmware/test_accelerator_protocol
+./build/firmware/test_accelerator_protocol
 "@
 
 & $bash -lc $command
