@@ -34,6 +34,7 @@ run_test tb_framebuffer_scanout sim/framebuffer.f
 run_test tb_rect_renderer sim/rect_renderer.f
 run_test tb_command_path sim/command_path.f
 run_test tb_spi_command sim/spi_command.f
+run_test tb_sprite_renderer sim/sprite_renderer.f
 
 mkdir -p build/firmware
 gcc -std=c11 -Wall -Wextra -Werror \

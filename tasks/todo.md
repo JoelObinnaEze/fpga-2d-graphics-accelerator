@@ -27,14 +27,14 @@ Verify: focused rectangle test plus the full test script.
 
 - [x] Freeze packet/status protocol.
 - [x] Implement command FIFO, decoder, SPI receive path, and RP2040 encoder.
-- [ ] Prove invalid, partial, full-queue, and back-to-back behavior.
+- [x] Prove invalid, partial, full-queue, and back-to-back behavior.
 
 Verify: protocol RTL tests and firmware host tests.
 
 ## Task 5: Sprite rendering
 
-- [ ] Add RGB565 sprite words with a separate opacity mask.
-- [ ] Prove source indexing, clipping, transparency, invalid IDs, and stalls.
+- [x] Add RGB565 sprite words with a separate opacity mask.
+- [x] Prove source indexing, clipping, transparency, invalid IDs, and stalls.
 
 Verify: focused sprite test plus the full test script.
 
