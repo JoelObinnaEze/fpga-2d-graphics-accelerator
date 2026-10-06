@@ -32,7 +32,7 @@ until the FPGA board arrives on 2026-10-15.
 | Scanout misses deadlines | Parameterized FIFO threshold, bounded write bursts, underflow counter |
 | HDMI serialization is vendor-specific | Keep `video_timing` portable and isolate primitives in `video_out` |
 | SPI crosses clock domains incorrectly | Freeze protocol first; use coherent byte/packet crossing and CDC tests |
-| Nested unrelated parent Git repository | Do not commit or push; initialize/move this project only on request |
+| Standalone repository has no remote | Keep atomic local commits; add an explicit remote before sharing |
 
 ## Checkpoints
 
