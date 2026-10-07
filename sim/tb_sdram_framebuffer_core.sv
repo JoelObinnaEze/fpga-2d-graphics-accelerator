@@ -1,6 +1,8 @@
 `timescale 1ns/1ps
 
 module tb_sdram_framebuffer_core;
+    import command_pkg::*;
+
     localparam int unsigned FRAME_WIDTH = 8;
     localparam int unsigned FRAME_HEIGHT = 2;
     localparam int unsigned FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT;
@@ -22,6 +24,12 @@ module tb_sdram_framebuffer_core;
     logic scanout_enabled;
     logic scanout_underflow;
     logic write_protocol_error;
+    logic command_valid;
+    logic command_ready;
+    command_t command;
+    logic engine_busy;
+    logic unsupported_command;
+    logic [15:0] unsupported_command_count;
     logic renderer_write_valid;
     logic renderer_write_ready;
     logic [21:0] renderer_write_pixel_address;
@@ -76,6 +84,28 @@ module tb_sdram_framebuffer_core;
         #200000;
         $fatal(1, "timed out waiting for SDRAM framebuffer core");
     end
+
+    graphics_command_engine #(
+        .FRAME_WIDTH(FRAME_WIDTH),
+        .FRAME_HEIGHT(FRAME_HEIGHT)
+    ) command_engine (
+        .clk(controller_clk),
+        .rst(controller_rst),
+        .command_valid,
+        .command_ready,
+        .command,
+        .draw_allowed,
+        .write_valid(renderer_write_valid),
+        .write_ready(renderer_write_ready),
+        .write_pixel_address(renderer_write_pixel_address),
+        .write_data(renderer_write_data),
+        .present_valid,
+        .present_ready,
+        .present_sequence,
+        .busy(engine_busy),
+        .unsupported_command,
+        .unsupported_command_count
+    );
 
     sdram_framebuffer_core #(
         .FRAME_WIDTH(FRAME_WIDTH),
@@ -232,30 +262,39 @@ module tb_sdram_framebuffer_core;
         vblank_active = 1'b0;
     endtask
 
+    task automatic issue_command(input command_t value);
+        @(negedge controller_clk);
+        command = value;
+        command_valid = 1'b1;
+        while (!command_ready)
+            @(negedge controller_clk);
+        @(posedge controller_clk);
+        #1;
+        command_valid = 1'b0;
+    endtask
+
     task automatic write_back_pixel(
         input logic [21:0] pixel_address,
         input logic [15:0] value
     );
-        @(negedge controller_clk);
-        while (!renderer_write_ready)
-            @(negedge controller_clk);
-        renderer_write_pixel_address = pixel_address;
-        renderer_write_data = value;
-        renderer_write_valid = 1'b1;
-        @(posedge controller_clk);
-        #1;
-        renderer_write_valid = 1'b0;
+        command_t draw_command;
+        draw_command = '0;
+        draw_command.opcode = OP_DRAW_RECT;
+        draw_command.arg0 = 16'(pixel_address % FRAME_WIDTH);
+        draw_command.arg1 = 16'(pixel_address / FRAME_WIDTH);
+        draw_command.arg2 = 16'd1;
+        draw_command.arg3 = 16'd1;
+        draw_command.arg4 = value;
+        issue_command(draw_command);
     endtask
 
     task automatic request_present(input logic [7:0] sequence_id);
-        @(negedge controller_clk);
-        while (!present_ready)
-            @(negedge controller_clk);
-        present_sequence = sequence_id;
-        present_valid = 1'b1;
-        @(posedge controller_clk);
-        #1;
-        present_valid = 1'b0;
+        command_t present_command;
+        present_command = '0;
+        present_command.opcode = OP_PRESENT;
+        present_command.sequence_id = sequence_id;
+        issue_command(present_command);
+        wait (present_pending);
     endtask
 
     task automatic consume_and_check_frame(input bit modified_first_pixel);
@@ -282,11 +321,8 @@ module tb_sdram_framebuffer_core;
         active_video = 1'b0;
         vblank_start = 1'b0;
         vblank_active = 1'b0;
-        renderer_write_valid = 1'b0;
-        renderer_write_pixel_address = '0;
-        renderer_write_data = '0;
-        present_valid = 1'b0;
-        present_sequence = '0;
+        command_valid = 1'b0;
+        command = '0;
         controller_init_done = 1'b0;
         for (int word_index = 0; word_index < 32; word_index++)
             memory[word_index] = '0;
@@ -334,6 +370,7 @@ module tb_sdram_framebuffer_core;
             $fatal(1, "initial prefetch stopped before filling the first frame");
 
         write_back_pixel(22'd0, 16'h1234);
+        wait (!engine_busy);
         wait (writes_committed);
         if (memory[FRAME_PIXELS / 2][15:0] != 16'h1234)
             $fatal(1, "renderer write did not target the back buffer");
@@ -377,7 +414,10 @@ module tb_sdram_framebuffer_core;
         if (!scanout_underflow || pixel != 16'h0000)
             $fatal(1, "scanout underflow did not latch black fallback");
 
-        $display("PASS: dual-buffer SDRAM scanout, committed swap, FIFO flush, and underflow");
+        if (unsupported_command || unsupported_command_count != 0)
+            $fatal(1, "supported graphics commands raised an error");
+
+        $display("PASS: graphics commands, dual-buffer SDRAM scanout, committed swap, FIFO flush, and underflow");
         $finish;
     end
 endmodule

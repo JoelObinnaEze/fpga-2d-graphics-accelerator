@@ -1,5 +1,8 @@
+rtl/common/command_pkg.sv
 rtl/common/sync_fifo.sv
 rtl/common/async_fifo.sv
+rtl/graphics/rect_renderer.sv
+rtl/graphics/graphics_command_engine.sv
 rtl/memory/framebuffer_colorbar_writer.sv
 rtl/memory/framebuffer_write_queue.sv
 rtl/memory/framebuffer_read_prefetch.sv

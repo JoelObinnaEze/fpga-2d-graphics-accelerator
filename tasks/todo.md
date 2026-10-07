@@ -74,7 +74,7 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
   error indication.
 - [x] Integrate and verify front/back SDRAM presentation with stale-read FIFO
   flushing and VBlank-safe scanout restart.
-- [ ] Execute clear, rectangle, and present commands through one ordered graphics
+- [x] Execute clear, rectangle, and present commands through one ordered graphics
   command engine into the SDRAM write queue.
 - [ ] Connect the SPI receiver, decoder, command FIFO, status, and READY pin to
   the graphics engine and verify the end-to-end command path.
