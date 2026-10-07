@@ -76,7 +76,7 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
   flushing and VBlank-safe scanout restart.
 - [x] Execute clear, rectangle, and present commands through one ordered graphics
   command engine into the SDRAM write queue.
-- [ ] Connect the SPI receiver, decoder, command FIFO, status, and READY pin to
+- [x] Connect the SPI receiver, decoder, command FIFO, status, and READY pin to
   the graphics engine and verify the end-to-end command path.
 - [ ] Build Pico SDK 2.3.1 autonomous Pong firmware for the selected SPI0 wiring.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.

@@ -29,20 +29,20 @@ module graphics_command_engine #(
 
     typedef enum logic [2:0] {
         IDLE,
+        START_RECT,
         WAIT_RECT,
         WAIT_RECT_DRAIN,
         WAIT_PRESENT
     } state_t;
 
     state_t state;
-    logic rect_command;
     logic rect_cmd_valid;
     logic rect_cmd_ready;
-    logic [15:0] rect_cmd_x;
-    logic [15:0] rect_cmd_y;
-    logic [15:0] rect_cmd_width;
-    logic [15:0] rect_cmd_height;
-    logic [15:0] rect_cmd_color;
+    logic [15:0] stored_rect_x;
+    logic [15:0] stored_rect_y;
+    logic [15:0] stored_rect_width;
+    logic [15:0] stored_rect_height;
+    logic [15:0] stored_rect_color;
     logic rect_write_valid;
     logic rect_write_ready;
     logic [X_WIDTH-1:0] rect_write_x;
@@ -64,27 +64,13 @@ module graphics_command_engine #(
     end
 
     always_comb begin
-        rect_command = command.opcode == OP_CLEAR ||
-                       command.opcode == OP_DRAW_RECT;
-        command_ready = state == IDLE && draw_allowed &&
-                        (!rect_command || rect_cmd_ready);
+        command_ready = state == IDLE && draw_allowed;
+        rect_cmd_valid = state == START_RECT;
 
-        rect_cmd_valid = command_valid && command_ready && rect_command;
-        if (command.opcode == OP_CLEAR) begin
-            rect_cmd_x = '0;
-            rect_cmd_y = '0;
-            rect_cmd_width = 16'(FRAME_WIDTH);
-            rect_cmd_height = 16'(FRAME_HEIGHT);
-            rect_cmd_color = command.arg0;
-        end else begin
-            rect_cmd_x = command.arg0;
-            rect_cmd_y = command.arg1;
-            rect_cmd_width = command.arg2;
-            rect_cmd_height = command.arg3;
-            rect_cmd_color = command.arg4;
-        end
-
-        rect_write_ready = !write_buffer_valid || write_ready;
+        // The registered output is deliberately not fall-through. This keeps
+        // SDRAM-ready combinational logic out of the renderer's coordinate
+        // feedback path; the one-cycle bubble is harmless at video rates.
+        rect_write_ready = !write_buffer_valid;
         write_buffer_transfer = write_buffer_valid && write_ready;
         write_valid = write_buffer_valid;
         write_pixel_address = write_buffer_address;
@@ -103,11 +89,11 @@ module graphics_command_engine #(
         .rst,
         .cmd_valid(rect_cmd_valid),
         .cmd_ready(rect_cmd_ready),
-        .cmd_x(rect_cmd_x),
-        .cmd_y(rect_cmd_y),
-        .cmd_width(rect_cmd_width),
-        .cmd_height(rect_cmd_height),
-        .cmd_color(rect_cmd_color),
+        .cmd_x(stored_rect_x),
+        .cmd_y(stored_rect_y),
+        .cmd_width(stored_rect_width),
+        .cmd_height(stored_rect_height),
+        .cmd_color(stored_rect_color),
         .write_valid(rect_write_valid),
         .write_ready(rect_write_ready),
         .write_x(rect_write_x),
@@ -123,6 +109,11 @@ module graphics_command_engine #(
             write_buffer_valid <= 1'b0;
             write_buffer_address <= '0;
             write_buffer_data <= '0;
+            stored_rect_x <= '0;
+            stored_rect_y <= '0;
+            stored_rect_width <= '0;
+            stored_rect_height <= '0;
+            stored_rect_color <= '0;
             present_sequence <= '0;
             unsupported_command <= 1'b0;
             unsupported_command_count <= '0;
@@ -144,7 +135,22 @@ module graphics_command_engine #(
                 IDLE: begin
                     if (command_valid && command_ready) begin
                         case (command.opcode)
-                            OP_CLEAR, OP_DRAW_RECT: state <= WAIT_RECT;
+                            OP_CLEAR: begin
+                                stored_rect_x <= '0;
+                                stored_rect_y <= '0;
+                                stored_rect_width <= 16'(FRAME_WIDTH);
+                                stored_rect_height <= 16'(FRAME_HEIGHT);
+                                stored_rect_color <= command.arg0;
+                                state <= START_RECT;
+                            end
+                            OP_DRAW_RECT: begin
+                                stored_rect_x <= command.arg0;
+                                stored_rect_y <= command.arg1;
+                                stored_rect_width <= command.arg2;
+                                stored_rect_height <= command.arg3;
+                                stored_rect_color <= command.arg4;
+                                state <= START_RECT;
+                            end
                             OP_PRESENT: begin
                                 present_sequence <= command.sequence_id;
                                 state <= WAIT_PRESENT;
@@ -158,16 +164,20 @@ module graphics_command_engine #(
                         endcase
                     end
                 end
+                START_RECT: begin
+                    if (rect_cmd_ready)
+                        state <= WAIT_RECT;
+                end
                 WAIT_RECT: begin
                     if (rect_done) begin
-                        if (!write_buffer_valid || write_buffer_transfer)
+                        if (!write_buffer_valid)
                             state <= IDLE;
                         else
                             state <= WAIT_RECT_DRAIN;
                     end
                 end
                 WAIT_RECT_DRAIN: begin
-                    if (!write_buffer_valid || write_buffer_transfer)
+                    if (!write_buffer_valid)
                         state <= IDLE;
                 end
                 WAIT_PRESENT: begin

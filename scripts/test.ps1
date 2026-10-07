@@ -43,6 +43,7 @@ run_test tb_sdram_pixel_adapter sim/sdram_pixel_adapter.f
 run_test tb_framebuffer_scanout sim/framebuffer.f
 run_test tb_rect_renderer sim/rect_renderer.f
 run_test tb_graphics_command_engine sim/graphics_command_engine.f
+run_test tb_graphics_command_link sim/graphics_command_link.f
 run_test tb_command_path sim/command_path.f
 run_test tb_spi_command sim/spi_command.f
 run_test tb_sprite_renderer sim/sprite_renderer.f

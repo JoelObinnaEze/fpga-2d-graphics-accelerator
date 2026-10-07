@@ -2,6 +2,11 @@
 
 module tang_nano_20k_sdram_scanout (
     input  wire        clk_27mhz,
+    input  wire        spi_sclk,
+    input  wire        spi_cs_n,
+    input  wire        spi_mosi,
+    output wire        spi_miso,
+    output wire        command_ready,
     output wire [5:0]  led_n,
     output wire        tmds_clk_p,
     output wire        tmds_clk_n,
@@ -58,6 +63,19 @@ module tang_nano_20k_sdram_scanout (
     logic scanout_underflow;
     logic write_protocol_error;
     logic prefetch_seen;
+    logic renderer_write_valid;
+    logic renderer_write_ready;
+    logic [21:0] renderer_write_pixel_address;
+    logic [15:0] renderer_write_data;
+    logic present_valid;
+    logic present_ready;
+    logic [7:0] present_sequence;
+    logic present_pending;
+    logic draw_allowed;
+    logic graphics_busy;
+    logic command_protocol_error;
+    logic [15:0] command_error_count;
+    logic [2:0] command_count;
 
     wire controller_init_done;
     wire controller_busy_n;
@@ -119,6 +137,33 @@ module tang_nano_20k_sdram_scanout (
         .vblank_start
     );
 
+    graphics_command_link #(
+        .FRAME_WIDTH(640),
+        .FRAME_HEIGHT(480),
+        .COMMAND_FIFO_DEPTH(4)
+    ) command_link (
+        .clk(controller_clk),
+        .rst(controller_reset),
+        .spi_sclk,
+        .spi_cs_n,
+        .spi_mosi,
+        .spi_miso,
+        .ready(command_ready),
+        .draw_allowed,
+        .write_valid(renderer_write_valid),
+        .write_ready(renderer_write_ready),
+        .write_pixel_address(renderer_write_pixel_address),
+        .write_data(renderer_write_data),
+        .present_valid,
+        .present_ready,
+        .present_sequence,
+        .present_pending,
+        .graphics_busy,
+        .protocol_error_latched(command_protocol_error),
+        .link_error_count(command_error_count),
+        .command_count
+    );
+
     sdram_framebuffer_core framebuffer (
         .controller_clk,
         .controller_rst(controller_reset),
@@ -135,19 +180,19 @@ module tang_nano_20k_sdram_scanout (
         .scanout_enabled,
         .scanout_underflow,
         .write_protocol_error,
-        .renderer_write_valid(1'b0),
-        .renderer_write_ready(),
-        .renderer_write_pixel_address(22'd0),
-        .renderer_write_data(16'd0),
-        .present_valid(1'b0),
-        .present_ready(),
-        .present_sequence(8'd0),
-        .present_pending(),
+        .renderer_write_valid,
+        .renderer_write_ready,
+        .renderer_write_pixel_address,
+        .renderer_write_data,
+        .present_valid,
+        .present_ready,
+        .present_sequence,
+        .present_pending,
         .present_done(),
         .completed_sequence(),
         .front_buffer_base(),
         .draw_buffer_base(),
-        .draw_allowed(),
+        .draw_allowed,
         .writes_committed(),
         .controller_init_done,
         .controller_busy_n,
@@ -234,6 +279,7 @@ module tang_nano_20k_sdram_scanout (
     assign led_n[1] = ~controller_init_done;
     assign led_n[2] = ~framebuffer_ready;
     assign led_n[3] = ~scanout_enabled;
-    assign led_n[4] = ~(scanout_underflow || write_protocol_error);
+    assign led_n[4] = ~(scanout_underflow || write_protocol_error ||
+                        command_protocol_error);
     assign led_n[5] = ~prefetch_seen;
 endmodule

@@ -31,11 +31,9 @@ module command_decoder (
     state_t state;
     logic [7:0] opcode;
     logic [7:0] payload_length;
-    logic [7:0] sequence_id;
     logic [3:0] payload_index;
-    logic [7:0] payload [0:9];
     logic [7:0] running_crc;
-    command_t decoded_command;
+    command_t assembled_command;
 
     function automatic logic [7:0] expected_length(input logic [7:0] value);
         case (value)
@@ -67,27 +65,6 @@ module command_decoder (
             EXPECT_PAYLOAD, EXPECT_CRC, DISCARD_FRAME
         };
 
-        decoded_command = '0;
-        decoded_command.opcode = opcode_t'(opcode);
-        decoded_command.sequence_id = sequence_id;
-        case (opcode)
-            OP_CLEAR: begin
-                decoded_command.arg0 = {payload[1], payload[0]};
-            end
-            OP_DRAW_RECT: begin
-                decoded_command.arg0 = {payload[1], payload[0]};
-                decoded_command.arg1 = {payload[3], payload[2]};
-                decoded_command.arg2 = {payload[5], payload[4]};
-                decoded_command.arg3 = {payload[7], payload[6]};
-                decoded_command.arg4 = {payload[9], payload[8]};
-            end
-            OP_DRAW_SPRITE: begin
-                decoded_command.arg0 = {payload[1], payload[0]};
-                decoded_command.arg1 = {payload[3], payload[2]};
-                decoded_command.arg2 = {payload[5], payload[4]};
-            end
-            default: decoded_command = decoded_command;
-        endcase
     end
 
     always_ff @(posedge clk) begin
@@ -95,9 +72,9 @@ module command_decoder (
             state <= IDLE;
             opcode <= '0;
             payload_length <= '0;
-            sequence_id <= '0;
             payload_index <= '0;
             running_crc <= '0;
+            assembled_command <= '0;
             command <= '0;
             command_valid <= 1'b0;
             protocol_error <= 1'b0;
@@ -117,6 +94,7 @@ module command_decoder (
                     state <= EXPECT_MAGIC;
                     running_crc <= '0;
                     payload_index <= '0;
+                    assembled_command <= '0;
                 end
             end else if (frame_end) begin
                 if (state == WAIT_FRAME_END || state == DISCARD_FRAME || state == IDLE) begin
@@ -141,6 +119,7 @@ module command_decoder (
                     end
                     EXPECT_OPCODE: begin
                         opcode <= byte_data;
+                        assembled_command.opcode <= opcode_t'(byte_data);
                         running_crc <= crc8_next(8'h00, byte_data);
                         state <= EXPECT_LENGTH;
                     end
@@ -157,12 +136,24 @@ module command_decoder (
                         end
                     end
                     EXPECT_SEQUENCE: begin
-                        sequence_id <= byte_data;
+                        assembled_command.sequence_id <= byte_data;
                         running_crc <= crc8_next(running_crc, byte_data);
                         state <= payload_length == 0 ? EXPECT_CRC : EXPECT_PAYLOAD;
                     end
                     EXPECT_PAYLOAD: begin
-                        payload[payload_index] <= byte_data;
+                        case (payload_index)
+                            4'd0: assembled_command.arg0[7:0] <= byte_data;
+                            4'd1: assembled_command.arg0[15:8] <= byte_data;
+                            4'd2: assembled_command.arg1[7:0] <= byte_data;
+                            4'd3: assembled_command.arg1[15:8] <= byte_data;
+                            4'd4: assembled_command.arg2[7:0] <= byte_data;
+                            4'd5: assembled_command.arg2[15:8] <= byte_data;
+                            4'd6: assembled_command.arg3[7:0] <= byte_data;
+                            4'd7: assembled_command.arg3[15:8] <= byte_data;
+                            4'd8: assembled_command.arg4[7:0] <= byte_data;
+                            4'd9: assembled_command.arg4[15:8] <= byte_data;
+                            default: assembled_command <= assembled_command;
+                        endcase
                         running_crc <= crc8_next(running_crc, byte_data);
                         if (8'(payload_index) + 8'd1 == payload_length) begin
                             state <= EXPECT_CRC;
@@ -172,7 +163,7 @@ module command_decoder (
                     end
                     EXPECT_CRC: begin
                         if (byte_data == running_crc) begin
-                            command <= decoded_command;
+                            command <= assembled_command;
                             command_valid <= 1'b1;
                             state <= WAIT_FRAME_END;
                         end else begin
