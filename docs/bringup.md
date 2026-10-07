@@ -182,6 +182,8 @@ proceeds to Pong integration.
   Fmax is 163.612 MHz against a 161.996 MHz constraint; pixel-domain Fmax is
   72.109 MHz against 25.200 MHz. Utilization is 3,138 logic elements (16%),
   1,465 registers (10%), and four BSRAMs (9%).
+- The command-link bitstream was programmed into volatile SRAM on 2026-10-06
+  with user code `0x00005590` and status code `0x00006020`.
 - The autonomous two-AI Pong firmware builds with Pico SDK 2.3.1 for the
   generic `pico` RP2040 board. It renders CLEAR, two paddles, a ball, and
   PRESENT at approximately 60 Hz, reports link counters over USB serial, and
