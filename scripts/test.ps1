@@ -30,6 +30,7 @@ run_test() {
 }
 
 run_test tb_video_timing sim/video.f
+run_test tb_tang_nano_20k_led sim/tang_nano_20k_led.f
 run_test tb_framebuffer_scanout sim/framebuffer.f
 run_test tb_rect_renderer sim/rect_renderer.f
 run_test tb_command_path sim/command_path.f

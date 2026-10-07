@@ -1,0 +1,9 @@
+// Tang Nano 20K clock and LED0 pins.
+// Sources:
+// https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/example/led.html
+// https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html
+IO_LOC "clk_27mhz" 4;
+IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33;
+
+IO_LOC "led0_n" 15;
+IO_PORT "led0_n" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
