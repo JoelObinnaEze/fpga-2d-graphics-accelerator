@@ -59,7 +59,8 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Build a portable RP2040 Pong model and graphics-command stream.
 - [x] Verify the 27 MHz clock pin, LED0 pin, JTAG enumeration, volatile SRAM
   programming, and physical LED blink.
-- [ ] Verify DVI/TMDS output and full SDRAM scanout.
+- [x] Verify 640 x 480 DVI/TMDS output with a physical monitor.
+- [ ] Verify full SDRAM scanout.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 
 Verify: reproducible hardware procedure and saved reports.

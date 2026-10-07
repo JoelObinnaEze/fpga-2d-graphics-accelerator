@@ -28,6 +28,7 @@
 
 - Tang Nano 20K hardware: https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/nano-20k.html
 - Tang Nano 20K LED example and pin assignments: https://wiki.sipeed.com/hardware/en/tang/tang-nano-20k/example/led.html
+- Tang Nano 20K HDMI example and connector constraints: https://github.com/sipeed/TangNano-20K-example/tree/main/hdmi
 - Gowin EDA 1.9.11.03: https://www.gowinsemi.com/en/document/main/database/1865/
 - Verilator installation: https://veripool.org/guide/latest/install.html
 - Pico SDK 2.3.1: https://www.raspberrypi.com/documentation/pico-sdk/
@@ -54,12 +55,40 @@ example uses this same pin. The implemented clock is promoted to a primary
 global clock, closes timing with substantial margin, and the warning is
 accepted for this bring-up target only.
 
+## Verified DVI Color-Bar Slice
+
+- Video mode: 640 x 480, 800 x 525 total, 25.2 MHz pixel clock, negative
+  horizontal and vertical synchronization, approximately 60 Hz refresh.
+- Clocking: the 27 MHz oscillator feeds one rPLL at 126 MHz; a divide-by-five
+  clock produces 25.2 MHz for pixel logic and `OSER10` serializers transmit
+  two TMDS bits per 126 MHz cycle.
+- Output: four differential pairs on package pins 33 through 40, matching the
+  current official Sipeed HDMI example.
+- Encoding: self-checking simulation covers all four DVI control tokens, known
+  pixel symbols, and running disparity behavior.
+- Synthesis, place-and-route, and bitstream generation complete with Gowin EDA
+  Education 1.9.11.03.
+- Timing: zero setup/hold violations at 25.2 MHz; reported pixel-domain Fmax is
+  189.539 MHz.
+- Utilization: 106 logic elements, 51 flip-flops, one rPLL, one CLKDIV, four
+  OSER10 serializers, and four differential output buffers.
+- Volatile SRAM programming completed successfully on 2026-10-06. User code
+  was `0x000082AD`; status code was `0x00006020`.
+- Joel visually confirmed the eight 640 x 480 color bars on a connected monitor
+  on 2026-10-06.
+
+The DVI build retains the same documented `PR1014` oscillator-pin warning as
+the LED build. The generated clocks are reported at exactly 126.000 MHz and
+25.200 MHz, and the design closes timing with substantial margin.
+
 ## Reproduce
 
 ```powershell
 pwsh -File scripts/test.ps1
 pwsh -File scripts/build_led.ps1
 pwsh -File scripts/program_led_sram.ps1
+pwsh -File scripts/build_dvi.ps1
+pwsh -File scripts/program_dvi_sram.ps1
 ```
 
 The programming script uses SRAM operation 2 only. It does not write onboard
@@ -69,7 +98,6 @@ flash; removing power restores the prior FPGA configuration.
 
 - Board revision and SDRAM component marking.
 - Schematic revision, remaining FPGA pin map, I/O standards, and voltages.
-- Legal PLL outputs for video and SDRAM clocks.
-- Monitor acceptance of the generated 640 x 480 mode.
+- Legal PLL outputs for SDRAM clocks.
 
 No hardware milestone is marked complete before these checks.

@@ -1,0 +1,13 @@
+// Tang Nano 20K oscillator and onboard HDMI connector pairs.
+// Source: https://github.com/sipeed/TangNano-20K-example/tree/main/hdmi
+IO_LOC "clk_27mhz" 4;
+IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33 PULL_MODE=UP BANK_VCCIO=3.3;
+
+IO_LOC "tmds_clk_p" 33,34;
+IO_PORT "tmds_clk_p" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
+IO_LOC "tmds_data_p[0]" 35,36;
+IO_PORT "tmds_data_p[0]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
+IO_LOC "tmds_data_p[1]" 37,38;
+IO_PORT "tmds_data_p[1]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;
+IO_LOC "tmds_data_p[2]" 39,40;
+IO_PORT "tmds_data_p[2]" IO_TYPE=LVDS25 PULL_MODE=NONE DRIVE=3.5 BANK_VCCIO=3.3;

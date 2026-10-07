@@ -24,8 +24,9 @@ The graphics engine and memory system are the project. The game is only the fina
 - All ordered parts arrived by 2026-10-06. The FPGA board enumerates and its
   JTAG ID identifies a GW2AR-18C device.
 - Portable video, framebuffer, rendering, command-link, frame-presentation,
-  and Pong logic have self-checking tests. A board-specific LED target also
-  passes simulation, synthesis, place-and-route, timing, and SRAM programming.
+  and Pong logic have self-checking tests. Board-specific LED and 640 x 480 DVI
+  color-bar targets pass simulation, synthesis, place-and-route, timing, SRAM
+  programming, and physical hardware observation.
 - The FPGA target is the Tang Nano 20K's documented GW2AR-LV18QN88C8/I7.
 - The host firmware target is a generic RP2040 board using the Pico SDK.
 - The framebuffer format is RGB565 and the final logical resolution is 640 x 480.
@@ -143,8 +144,10 @@ Required command categories:
 | RTL simulation | `pwsh -File scripts/test.ps1` |
 | All self-checking tests | `pwsh -File scripts/test.ps1` |
 | FPGA LED synthesis/place-and-route | `pwsh -File scripts/build_led.ps1` |
-| Timing and utilization reports | `build/gowin/tang_nano_20k_led/impl/pnr/` |
 | FPGA LED volatile SRAM programming | `pwsh -File scripts/program_led_sram.ps1` |
+| FPGA DVI synthesis/place-and-route | `pwsh -File scripts/build_dvi.ps1` |
+| FPGA DVI volatile SRAM programming | `pwsh -File scripts/program_dvi_sram.ps1` |
+| Timing and utilization reports | `build/gowin/<target>/impl/pnr/` |
 | RP2040 firmware configure/build/flash | TBD in Stage 0 |
 
 ## Repository Structure
