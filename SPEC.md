@@ -281,6 +281,11 @@ Controller integration must be verified in simulation and hardware, including
 clock phase, request/acknowledge behavior, read-valid timing, full address
 coverage, and complementary data patterns.
 
+The logical framebuffer uses 22-bit RGB565 pixel addresses. Two adjacent
+pixels share each 32-bit SDRAM word: an even pixel occupies bits 15:0 and an
+odd pixel occupies bits 31:16. Partial writes use the controller byte mask so
+updating either pixel preserves its neighbor.
+
 The arbiter shall:
 
 - Prioritize scanout when read-FIFO occupancy falls below a derived threshold.
