@@ -153,7 +153,8 @@ Required command categories:
 | FPGA SDRAM scanout synthesis/place-and-route | `pwsh -File scripts/build_sdram_scanout.ps1` |
 | FPGA SDRAM scanout volatile SRAM programming | `pwsh -File scripts/program_sdram_scanout_sram.ps1` |
 | Timing and utilization reports | `build/gowin/<target>/impl/pnr/` |
-| RP2040 firmware configure/build/flash | TBD in Stage 0 |
+| RP2040 firmware configure/build | `pwsh -File scripts/build_pico_pong.ps1` |
+| RP2040 firmware BOOTSEL flash | `pwsh -File scripts/flash_pico_pong.ps1` |
 
 ## Repository Structure
 

@@ -40,6 +40,7 @@ typedef bool (*pong_emit_packet_fn)(
 );
 
 void pong_init(pong_state_t *game);
+uint8_t pong_autonomous_input(const pong_state_t *game);
 void pong_step(pong_state_t *game, uint8_t input);
 bool pong_render(
     const pong_state_t *game,

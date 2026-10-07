@@ -157,6 +157,40 @@ The burst-read revision is simulation-, timing-, programming-, and
 hardware-verified. The full SDRAM scanout milestone is complete; Stage 8 now
 proceeds to Pong integration.
 
+## Host Command Link and Pong Firmware
+
+- SPI mode 0, MSB first, 8 MHz, one command packet per active-low chip-select
+  interval. Firmware waits for the separate active-high READY signal before
+  every packet and validates the version/error status returned on MISO.
+- The final pin harness is:
+
+| RP2040 | Direction at RP2040 | Signal | Tang Nano 20K | FPGA pin |
+| --- | --- | --- | --- | --- |
+| GP0 | input | MISO | J6-8 | 27 |
+| GP1 | output | CS_N | J6-9 | 28 |
+| GP2 | output | SCLK | J6-10 | 25 |
+| GP3 | output | MOSI | J6-11 | 26 |
+| GP4 | input | READY | J6-12 | 29 |
+| GND | - | common ground | J6-20 | GND |
+
+- Both boards may remain powered from their own USB connectors after the
+  harness is installed. Connect only the five 3.3 V logic signals and common
+  ground; do not join 5 V, VSYS, or 3V3 rails between the powered boards.
+- Full end-to-end simulation covers READY backpressure, status, valid and bad
+  CRCs, FIFO ordering, CLEAR/DRAW_RECT execution, and delayed PRESENT.
+- Final FPGA place-and-route has zero setup and hold TNS. Controller-domain
+  Fmax is 163.612 MHz against a 161.996 MHz constraint; pixel-domain Fmax is
+  72.109 MHz against 25.200 MHz. Utilization is 3,138 logic elements (16%),
+  1,465 registers (10%), and four BSRAMs (9%).
+- The autonomous two-AI Pong firmware builds with Pico SDK 2.3.1 for the
+  generic `pico` RP2040 board. It renders CLEAR, two paddles, a ball, and
+  PRESENT at approximately 60 Hz, reports link counters over USB serial, and
+  produces `build/pico/fpga_pong/fpga_pong.uf2`.
+
+Hardware Pong verification remains pending. Wire only while both boards are
+unpowered, reconnect both USB cables, volatile-program the FPGA, then hold the
+RP2040 BOOTSEL button while connecting/resetting it and run the flash command.
+
 ## Reproduce
 
 ```powershell
@@ -169,6 +203,8 @@ pwsh -File scripts/build_sdram_bist.ps1
 pwsh -File scripts/program_sdram_bist_sram.ps1
 pwsh -File scripts/build_sdram_scanout.ps1
 pwsh -File scripts/program_sdram_scanout_sram.ps1
+pwsh -File scripts/build_pico_pong.ps1
+pwsh -File scripts/flash_pico_pong.ps1
 ```
 
 The programming script uses SRAM operation 2 only. It does not write onboard

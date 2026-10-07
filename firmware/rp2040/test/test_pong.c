@@ -37,6 +37,21 @@ int main(void) {
     assert(game.ball_x == (PONG_SCREEN_WIDTH - PONG_BALL_SIZE) / 2);
     assert(game.ball_y == (PONG_SCREEN_HEIGHT - PONG_BALL_SIZE) / 2);
 
+    game.left_paddle_y = 200;
+    game.right_paddle_y = 100;
+    game.ball_y = 0;
+    assert(pong_autonomous_input(&game) ==
+           (PONG_INPUT_LEFT_UP | PONG_INPUT_RIGHT_UP));
+    game.ball_y = 400;
+    assert(pong_autonomous_input(&game) ==
+           (PONG_INPUT_LEFT_DOWN | PONG_INPUT_RIGHT_DOWN));
+    game.left_paddle_y = 200;
+    game.right_paddle_y = 200;
+    game.ball_y = 228;
+    assert(pong_autonomous_input(&game) == 0);
+
+    pong_init(&game);
+
     pong_step(&game, 0);
     assert(game.ball_x == (PONG_SCREEN_WIDTH - PONG_BALL_SIZE) / 2 + 4);
     assert(game.ball_y == (PONG_SCREEN_HEIGHT - PONG_BALL_SIZE) / 2 + 3);

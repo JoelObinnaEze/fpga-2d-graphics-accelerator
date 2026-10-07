@@ -4,6 +4,7 @@ enum {
     PADDLE_SPEED = 6,
     BALL_SPEED_X = 4,
     BALL_SPEED_Y = 3,
+    AI_DEADBAND = 4,
 };
 
 static int16_t clamp_paddle(int16_t y) {
@@ -34,6 +35,25 @@ void pong_init(pong_state_t *game) {
     game->left_score = 0;
     game->right_score = 0;
     reset_ball(game, 1);
+}
+
+uint8_t pong_autonomous_input(const pong_state_t *game) {
+    const int ball_center = game->ball_y + PONG_BALL_SIZE / 2;
+    const int left_center = game->left_paddle_y + PONG_PADDLE_HEIGHT / 2;
+    const int right_center = game->right_paddle_y + PONG_PADDLE_HEIGHT / 2;
+    uint8_t input = 0;
+
+    if (ball_center < left_center - AI_DEADBAND)
+        input |= PONG_INPUT_LEFT_UP;
+    else if (ball_center > left_center + AI_DEADBAND)
+        input |= PONG_INPUT_LEFT_DOWN;
+
+    if (ball_center < right_center - AI_DEADBAND)
+        input |= PONG_INPUT_RIGHT_UP;
+    else if (ball_center > right_center + AI_DEADBAND)
+        input |= PONG_INPUT_RIGHT_DOWN;
+
+    return input;
 }
 
 void pong_step(pong_state_t *game, uint8_t input) {

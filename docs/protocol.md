@@ -9,9 +9,10 @@
 - A separate active-high `READY` GPIO is sampled before chip select is asserted.
   `READY` guarantees room for one complete command; it never changes the packet
   already in flight and the FPGA never silently drops that packet.
-- The FPGA samples synchronized SPI inputs in the 100.8 MHz system-clock domain.
-  The system clock must remain at least 8 times faster than SCLK; the selected
-  8 MHz SCLK has a 12.6x margin. Any clock change must preserve this bound.
+- The FPGA samples synchronized SPI inputs in the 162 MHz controller-clock
+  domain. The controller clock must remain at least 8 times faster than SCLK;
+  the selected 8 MHz SCLK has a 20.25x margin. Any clock change must preserve
+  this bound.
 
 ## Packet
 
