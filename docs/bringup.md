@@ -146,12 +146,16 @@ in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
   RP2040 regression passes, place-and-route meets timing with zero TNS, and the
   candidate was programmed into volatile SRAM on 2026-10-06 with user code
   `0x0000BADE` and status code `0x00006020`.
+- Joel physically confirmed stable eight-bar output and the expected diagnostic
+  state: LED0, LED1, LED2, LED3, and LED5 on, with LED4 off. This verifies
+  sustained scanout without an underflow or protocol error.
 - Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
   LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
   underflow/protocol error, and LED5 at least one complete prefetch.
 
-The burst-read revision is simulation-, timing-, and programming-verified.
-Stage 8 remains open until its physical display and LED result is recorded.
+The burst-read revision is simulation-, timing-, programming-, and
+hardware-verified. The full SDRAM scanout milestone is complete; Stage 8 now
+proceeds to Pong integration.
 
 ## Reproduce
 
@@ -172,9 +176,6 @@ flash; removing power restores the prior FPGA configuration.
 
 ## Remaining Hardware Verification
 
-- Confirm that the newly programmed burst-read scanout shows stable color bars
-  and record the six LED states after at least one complete frame. LED4 must be
-  off; LED0, LED1, LED2, LED3, and LED5 should be on.
 - Board/schematic revision, remaining FPGA pin map, I/O standards, and voltages.
 
-No hardware milestone is marked complete before these checks.
+Record the remaining board details before final project handoff.

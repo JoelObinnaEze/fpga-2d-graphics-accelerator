@@ -70,7 +70,8 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Build and simulate the full SDRAM color-bar scanout candidate with clean
   setup, hold, recovery, and removal timing.
 - [x] Volatile-program the SDRAM scanout candidate successfully.
-- [ ] Verify full SDRAM scanout.
+- [x] Verify full SDRAM scanout with stable color bars and no underflow/protocol
+  error indication.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 
 Verify: reproducible hardware procedure and saved reports.
