@@ -72,7 +72,7 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Volatile-program the SDRAM scanout candidate successfully.
 - [x] Verify full SDRAM scanout with stable color bars and no underflow/protocol
   error indication.
-- [ ] Integrate and verify front/back SDRAM presentation with stale-read FIFO
+- [x] Integrate and verify front/back SDRAM presentation with stale-read FIFO
   flushing and VBlank-safe scanout restart.
 - [ ] Execute clear, rectangle, and present commands through one ordered graphics
   command engine into the SDRAM write queue.

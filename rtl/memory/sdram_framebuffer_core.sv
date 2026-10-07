@@ -13,7 +13,9 @@ module sdram_framebuffer_core #(
     parameter int unsigned READ_FIFO_DEPTH = 512,
     parameter int unsigned READ_FIFO_LOW_WATER = 256,
     parameter int unsigned READ_BURST_PIXELS = 32,
-    parameter int unsigned WRITE_FIFO_DEPTH = 64
+    parameter int unsigned WRITE_FIFO_DEPTH = 64,
+    parameter int unsigned BUFFER0_BASE = 0,
+    parameter int unsigned BUFFER1_BASE = FRAME_WIDTH * FRAME_HEIGHT
 ) (
     input  logic controller_clk,
     input  logic controller_rst,
@@ -21,6 +23,7 @@ module sdram_framebuffer_core #(
     input  logic pixel_rst,
     input  logic active_video,
     input  logic vblank_start,
+    input  logic vblank_active,
     output logic [15:0] pixel,
     output logic framebuffer_ready,
     output logic initialization_active,
@@ -29,6 +32,20 @@ module sdram_framebuffer_core #(
     output logic scanout_enabled,
     output logic scanout_underflow,
     output logic write_protocol_error,
+    input  logic renderer_write_valid,
+    output logic renderer_write_ready,
+    input  logic [21:0] renderer_write_pixel_address,
+    input  logic [15:0] renderer_write_data,
+    input  logic present_valid,
+    output logic present_ready,
+    input  logic [7:0] present_sequence,
+    output logic present_pending,
+    output logic present_done,
+    output logic [7:0] completed_sequence,
+    output logic [21:0] front_buffer_base,
+    output logic [21:0] draw_buffer_base,
+    output logic draw_allowed,
+    output logic writes_committed,
     input  logic controller_init_done,
     input  logic controller_busy_n,
     input  logic controller_ack,
@@ -47,6 +64,7 @@ module sdram_framebuffer_core #(
         $clog2(READ_FIFO_WORD_DEPTH + 1);
     localparam int unsigned WRITE_LEVEL_WIDTH =
         $clog2(WRITE_FIFO_DEPTH + 1);
+    localparam int unsigned PREFILL_WORDS = READ_FIFO_LOW_WATER / 2;
 
     logic initializer_start_valid;
     logic initializer_start_ready;
@@ -56,7 +74,20 @@ module sdram_framebuffer_core #(
     logic [15:0] initializer_write_data;
     logic initializer_complete;
     logic initialization_started;
-    logic initialization_issued;
+    typedef enum logic [1:0] {
+        INIT_BUFFER0,
+        INIT_BUFFER1,
+        INIT_DRAIN,
+        INIT_DONE
+    } initialization_state_t;
+    initialization_state_t initialization_state;
+
+    logic selected_write_valid;
+    logic selected_write_ready;
+    logic [21:0] selected_write_address;
+    logic [15:0] selected_write_data;
+    logic renderer_address_valid;
+    logic renderer_address_error;
 
     logic queued_write_valid;
     logic queued_write_ready;
@@ -66,7 +97,6 @@ module sdram_framebuffer_core #(
     logic buffered_write_ready;
     logic [21:0] buffered_write_address;
     logic [15:0] buffered_write_data;
-    logic writes_committed;
     logic [WRITE_LEVEL_WIDTH-1:0] write_queue_count;
     logic [$clog2(2 + 1)-1:0] outstanding_write_count;
     logic adapter_write_committed;
@@ -106,21 +136,87 @@ module sdram_framebuffer_core #(
     logic adapter_read_protocol_error;
     logic write_queue_protocol_error;
 
-    logic framebuffer_ready_sync1;
-    logic framebuffer_ready_sync2;
+    logic presenter_ready;
+    logic presenter_draw_allowed;
+    logic [31:0] presenter_front_buffer_base;
+    logic [31:0] presenter_draw_buffer_base;
+    logic presenter_base_error;
+    logic prefetch_restart;
+    logic new_front_prefill_ready;
+
+    typedef enum logic [2:0] {
+        PREFETCH_NORMAL,
+        FLUSH_WAIT_HIGH,
+        FLUSH_WAIT_LOW,
+        PREFILL_START,
+        PREFILL_WAIT
+    } prefetch_control_state_t;
+    prefetch_control_state_t prefetch_control_state;
+    logic prefetch_start_fire;
+    logic read_fifo_flush_request;
+    logic front_stream_ready;
+
+    logic vblank_toggle;
+    (* async_reg = "true" *) logic vblank_toggle_sync1;
+    (* async_reg = "true" *) logic vblank_toggle_sync2;
+    logic vblank_toggle_previous;
+    logic controller_vblank_start;
+
+    (* async_reg = "true" *) logic flush_request_sync1;
+    (* async_reg = "true" *) logic flush_request_sync2;
+    logic read_fifo_flush_ack;
+    (* async_reg = "true" *) logic flush_ack_sync1;
+    (* async_reg = "true" *) logic flush_ack_sync2;
+    (* async_reg = "true" *) logic front_stream_ready_sync1;
+    (* async_reg = "true" *) logic front_stream_ready_sync2;
+
     logic pixel_upper_half;
 
     initial begin
-        if (FRAME_PIXELS == 0 || FRAME_PIXELS > 4194304)
+        if (FRAME_PIXELS == 0 || BUFFER0_BASE + FRAME_PIXELS > 4194304 ||
+            BUFFER1_BASE + FRAME_PIXELS > 4194304)
             $error("frame size must fit the 22-bit pixel-address space");
+        if (BUFFER0_BASE % 2 != 0 || BUFFER1_BASE % 2 != 0)
+            $error("packed framebuffer bases must be even pixel addresses");
         if (FRAME_PIXELS % 2 != 0 || READ_FIFO_DEPTH % 2 != 0 ||
             READ_FIFO_LOW_WATER % 2 != 0 || READ_BURST_PIXELS % 2 != 0)
             $error("packed scanout parameters must be even");
     end
 
     assign initializer_start_valid = controller_init_done &&
-                                     !initialization_started;
-    assign prefetch_start_valid = framebuffer_ready && prefetch_start_ready;
+        !initialization_started &&
+        (initialization_state == INIT_BUFFER0 ||
+         initialization_state == INIT_BUFFER1);
+    assign prefetch_start_valid = framebuffer_ready &&
+        ((prefetch_control_state == PREFETCH_NORMAL && !present_pending) ||
+         prefetch_control_state == PREFILL_START);
+    assign prefetch_start_fire = prefetch_start_valid &&
+                                 prefetch_start_ready;
+
+    always_comb begin
+        renderer_address_valid = int'(renderer_write_pixel_address) <
+                                 FRAME_PIXELS;
+        selected_write_valid = 1'b0;
+        selected_write_address = '0;
+        selected_write_data = '0;
+        initializer_write_ready = 1'b0;
+        renderer_write_ready = 1'b0;
+
+        if (initialization_state != INIT_DONE) begin
+            selected_write_valid = initializer_write_valid;
+            selected_write_address = initializer_write_address;
+            selected_write_data = initializer_write_data;
+            initializer_write_ready = selected_write_ready;
+        end else if (draw_allowed) begin
+            selected_write_valid = renderer_write_valid &&
+                                   renderer_address_valid;
+            selected_write_address = draw_buffer_base +
+                                     renderer_write_pixel_address;
+            selected_write_data = renderer_write_data;
+            renderer_write_ready = renderer_address_valid
+                                 ? selected_write_ready : 1'b1;
+        end
+    end
 
     framebuffer_colorbar_writer #(
         .FRAME_WIDTH(FRAME_WIDTH),
@@ -130,7 +226,8 @@ module sdram_framebuffer_core #(
         .rst(controller_rst),
         .start_valid(initializer_start_valid),
         .start_ready(initializer_start_ready),
-        .start_pixel_address(22'd0),
+        .start_pixel_address(initialization_state == INIT_BUFFER1
+                           ? 22'(BUFFER1_BASE) : 22'(BUFFER0_BASE)),
         .write_valid(initializer_write_valid),
         .write_ready(initializer_write_ready),
         .write_pixel_address(initializer_write_address),
@@ -145,10 +242,10 @@ module sdram_framebuffer_core #(
     ) write_queue (
         .clk(controller_clk),
         .rst(controller_rst),
-        .write_valid(initializer_write_valid),
-        .write_ready(initializer_write_ready),
-        .write_pixel_address(initializer_write_address),
-        .write_data(initializer_write_data),
+        .write_valid(selected_write_valid),
+        .write_ready(selected_write_ready),
+        .write_pixel_address(selected_write_address),
+        .write_data(selected_write_data),
         .arbiter_valid(queued_write_valid),
         .arbiter_ready(queued_write_ready),
         .arbiter_pixel_address(queued_write_address),
@@ -170,7 +267,7 @@ module sdram_framebuffer_core #(
         .rst(controller_rst),
         .start_valid(prefetch_start_valid),
         .start_ready(prefetch_start_ready),
-        .start_pixel_address(22'd0),
+        .start_pixel_address(front_buffer_base),
         .active(prefetch_active),
         .complete(prefetch_complete),
         .fifo_write_level(scheduled_fifo_level),
@@ -184,6 +281,27 @@ module sdram_framebuffer_core #(
         .response_valid(adapter_response_valid),
         .response_ready(adapter_response_ready),
         .response_read_data(adapter_response_data)
+    );
+
+    frame_presenter #(
+        .BUFFER0_BASE(BUFFER0_BASE),
+        .BUFFER1_BASE(BUFFER1_BASE)
+    ) presenter (
+        .clk(controller_clk),
+        .rst(controller_rst),
+        .present_valid(present_valid && framebuffer_ready),
+        .present_ready(presenter_ready),
+        .present_sequence,
+        .writes_committed(writes_committed && !prefetch_active),
+        .vblank_start(controller_vblank_start),
+        .prefetch_ready(new_front_prefill_ready),
+        .front_buffer_base(presenter_front_buffer_base),
+        .draw_buffer_base(presenter_draw_buffer_base),
+        .draw_allowed(presenter_draw_allowed),
+        .present_pending,
+        .prefetch_restart,
+        .present_done,
+        .completed_sequence
     );
 
     framebuffer_arbiter #(
@@ -269,9 +387,24 @@ module sdram_framebuffer_core #(
             buffered_write_address <= '0;
             buffered_write_data <= '0;
             initialization_started <= 1'b0;
-            initialization_issued <= 1'b0;
+            initialization_state <= INIT_BUFFER0;
             framebuffer_ready <= 1'b0;
+            renderer_address_error <= 1'b0;
+            prefetch_control_state <= PREFETCH_NORMAL;
+            read_fifo_flush_request <= 1'b0;
+            front_stream_ready <= 1'b0;
+            vblank_toggle_sync1 <= 1'b0;
+            vblank_toggle_sync2 <= 1'b0;
+            vblank_toggle_previous <= 1'b0;
+            flush_ack_sync1 <= 1'b0;
+            flush_ack_sync2 <= 1'b0;
         end else begin
+            vblank_toggle_sync1 <= vblank_toggle;
+            vblank_toggle_sync2 <= vblank_toggle_sync1;
+            vblank_toggle_previous <= vblank_toggle_sync2;
+            flush_ack_sync1 <= read_fifo_flush_ack;
+            flush_ack_sync2 <= flush_ack_sync1;
+
             // Break the Gray-pointer decode/subtract path before arbitration.
             // framebuffer_read_prefetch waits one settle cycle after every
             // response, so this conservative pipeline cannot over-reserve.
@@ -294,12 +427,64 @@ module sdram_framebuffer_core #(
             end
             if (initializer_start_valid && initializer_start_ready)
                 initialization_started <= 1'b1;
-            if (initializer_complete)
-                initialization_issued <= 1'b1;
-            if (initialization_issued && !initialization_active &&
-                write_queue_count == 0 && outstanding_write_count == 0 &&
-                writes_committed && !refresh_ready)
+            if (initializer_complete) begin
+                initialization_started <= 1'b0;
+                if (initialization_state == INIT_BUFFER0)
+                    initialization_state <= INIT_BUFFER1;
+                else if (initialization_state == INIT_BUFFER1)
+                    initialization_state <= INIT_DRAIN;
+            end
+            if (initialization_state == INIT_DRAIN &&
+                !initialization_active && write_queue_count == 0 &&
+                outstanding_write_count == 0 && writes_committed &&
+                !refresh_ready) begin
+                initialization_state <= INIT_DONE;
                 framebuffer_ready <= 1'b1;
+            end
+
+            if (renderer_write_valid && renderer_write_ready &&
+                !renderer_address_valid)
+                renderer_address_error <= 1'b1;
+
+            case (prefetch_control_state)
+                PREFETCH_NORMAL: begin
+                    if (prefetch_restart) begin
+                        read_fifo_flush_request <= 1'b1;
+                        front_stream_ready <= 1'b0;
+                        prefetch_control_state <= FLUSH_WAIT_HIGH;
+                    end else if (!front_stream_ready && framebuffer_ready &&
+                                 int'(scheduled_fifo_level) >=
+                                 PREFILL_WORDS) begin
+                        front_stream_ready <= 1'b1;
+                    end
+                end
+
+                FLUSH_WAIT_HIGH: begin
+                    if (flush_ack_sync2) begin
+                        read_fifo_flush_request <= 1'b0;
+                        prefetch_control_state <= FLUSH_WAIT_LOW;
+                    end
+                end
+
+                FLUSH_WAIT_LOW: begin
+                    if (!flush_ack_sync2)
+                        prefetch_control_state <= PREFILL_START;
+                end
+
+                PREFILL_START: begin
+                    if (prefetch_start_fire)
+                        prefetch_control_state <= PREFILL_WAIT;
+                end
+
+                PREFILL_WAIT: begin
+                    if (int'(scheduled_fifo_level) >= PREFILL_WORDS) begin
+                        front_stream_ready <= 1'b1;
+                        prefetch_control_state <= PREFETCH_NORMAL;
+                    end
+                end
+
+                default: prefetch_control_state <= PREFETCH_NORMAL;
+            endcase
         end
     end
 
@@ -309,29 +494,51 @@ module sdram_framebuffer_core #(
     // outstanding when this slot accepts it.
     assign prefetch_request_ready = !buffered_read_valid;
     assign queued_write_ready = !buffered_write_valid;
+    assign controller_vblank_start = vblank_toggle_sync2 ^
+                                     vblank_toggle_previous;
+    assign new_front_prefill_ready =
+        prefetch_control_state == PREFILL_WAIT &&
+        int'(scheduled_fifo_level) >= PREFILL_WORDS;
 
     always_ff @(posedge pixel_clk) begin
         if (pixel_rst) begin
-            framebuffer_ready_sync1 <= 1'b0;
-            framebuffer_ready_sync2 <= 1'b0;
+            flush_request_sync1 <= 1'b0;
+            flush_request_sync2 <= 1'b0;
+            front_stream_ready_sync1 <= 1'b0;
+            front_stream_ready_sync2 <= 1'b0;
+            read_fifo_flush_ack <= 1'b0;
+            vblank_toggle <= 1'b0;
             scanout_enabled <= 1'b0;
             scanout_underflow <= 1'b0;
             pixel_upper_half <= 1'b0;
         end else begin
-            framebuffer_ready_sync1 <= framebuffer_ready;
-            framebuffer_ready_sync2 <= framebuffer_ready_sync1;
+            flush_request_sync1 <= read_fifo_flush_request;
+            flush_request_sync2 <= flush_request_sync1;
+            front_stream_ready_sync1 <= front_stream_ready;
+            front_stream_ready_sync2 <= front_stream_ready_sync1;
 
-            if (!scanout_enabled && vblank_start &&
-                framebuffer_ready_sync2 && read_fifo_read_level != 0 &&
-                read_fifo_read_valid)
-                scanout_enabled <= 1'b1;
+            if (vblank_start)
+                vblank_toggle <= ~vblank_toggle;
 
-            if (scanout_enabled && active_video) begin
-                if (read_fifo_read_valid)
-                    pixel_upper_half <= ~pixel_upper_half;
-                else begin
-                    pixel_upper_half <= 1'b0;
-                    scanout_underflow <= 1'b1;
+            if (flush_request_sync2) begin
+                scanout_enabled <= 1'b0;
+                pixel_upper_half <= 1'b0;
+                read_fifo_flush_ack <= !read_fifo_read_valid;
+            end else begin
+                read_fifo_flush_ack <= 1'b0;
+
+                if (!scanout_enabled && vblank_active &&
+                    front_stream_ready_sync2 && read_fifo_read_level != 0 &&
+                    read_fifo_read_valid)
+                    scanout_enabled <= 1'b1;
+
+                if (scanout_enabled && active_video) begin
+                    if (read_fifo_read_valid)
+                        pixel_upper_half <= ~pixel_upper_half;
+                    else begin
+                        pixel_upper_half <= 1'b0;
+                        scanout_underflow <= 1'b1;
+                    end
                 end
             end
         end
@@ -339,13 +546,22 @@ module sdram_framebuffer_core #(
 
     always_comb begin
         address_upper_zero = arbiter_memory_address[31:22] == 0;
-        read_fifo_read_ready = scanout_enabled && active_video &&
+        read_fifo_read_ready = flush_request_sync2
+                             ? read_fifo_read_valid
+                             : scanout_enabled && active_video &&
                                read_fifo_read_valid && pixel_upper_half;
         pixel = scanout_enabled && active_video && read_fifo_read_valid
               ? (pixel_upper_half ? read_fifo_read_data[31:16]
                                   : read_fifo_read_data[15:0])
               : 16'h0000;
+        present_ready = framebuffer_ready && presenter_ready;
+        front_buffer_base = presenter_front_buffer_base[21:0];
+        draw_buffer_base = presenter_draw_buffer_base[21:0];
+        draw_allowed = framebuffer_ready && presenter_draw_allowed;
+        presenter_base_error = |presenter_front_buffer_base[31:22] ||
+                               |presenter_draw_buffer_base[31:22];
         write_protocol_error = write_queue_protocol_error ||
-                               adapter_read_protocol_error;
+                               adapter_read_protocol_error ||
+                               renderer_address_error || presenter_base_error;
     end
 endmodule

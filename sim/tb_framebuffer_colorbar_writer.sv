@@ -3,7 +3,8 @@
 module tb_framebuffer_colorbar_writer;
     localparam int unsigned FRAME_WIDTH = 8;
     localparam int unsigned FRAME_HEIGHT = 2;
-    localparam logic [21:0] BASE_ADDRESS = 22'd37;
+    // Cross the split-counter carry boundary while checking exact addressing.
+    localparam logic [21:0] BASE_ADDRESS = 22'd2040;
 
     logic clk;
     logic rst;

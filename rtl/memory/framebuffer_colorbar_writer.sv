@@ -71,7 +71,13 @@ module framebuffer_colorbar_writer #(
                     active <= 1'b0;
                     complete <= 1'b1;
                 end else begin
-                    write_pixel_address <= write_pixel_address + 1'b1;
+                    // Split the address carry so a full-width increment is not
+                    // placed on the 162 MHz controller-domain critical path.
+                    write_pixel_address[10:0] <=
+                        write_pixel_address[10:0] + 1'b1;
+                    if (write_pixel_address[10:0] == 11'h7ff)
+                        write_pixel_address[21:11] <=
+                            write_pixel_address[21:11] + 1'b1;
                     if (int'(x) == FRAME_WIDTH - 1) begin
                         x <= '0;
                         y <= y + 1'b1;

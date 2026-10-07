@@ -5,5 +5,6 @@ rtl/memory/framebuffer_write_queue.sv
 rtl/memory/framebuffer_read_prefetch.sv
 rtl/memory/framebuffer_arbiter.sv
 rtl/memory/sdram_pixel_adapter.sv
+rtl/video/frame_presenter.sv
 rtl/memory/sdram_framebuffer_core.sv
 sim/tb_sdram_framebuffer_core.sv
