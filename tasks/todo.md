@@ -40,12 +40,15 @@ Verify: focused sprite test plus the full test script.
 
 ## Task 6: SDRAM and arbitration
 
-- [ ] Verify the exact SDRAM component before fixing timing parameters.
+- [x] Verify the embedded 64-Mbit, 32-bit GW2AR SDRAM organization and official
+  controller interface.
 - [x] Implement portable scanout/write/refresh arbitration with bounded write bursts.
-- [ ] Implement controller initialization, refresh timing, bursts, and read/write FIFOs.
-- [ ] Prove timing legality, readback, scanout priority, and renderer progress.
+- [x] Integrate the official embedded controller and a full-memory two-pattern BIST.
+- [x] Characterize the SDRAM clock phase and confirm the full physical BIST.
+- [ ] Implement framebuffer bursts and read/write FIFOs.
+- [ ] Prove scanout priority and renderer progress through the SDRAM adapter.
 
-Verify: timing-model tests; hardware readback after 2026-10-15.
+Verify: `pwsh -File scripts/test.ps1`, then the SDRAM build/program scripts.
 
 ## Task 7: Frame presentation
 

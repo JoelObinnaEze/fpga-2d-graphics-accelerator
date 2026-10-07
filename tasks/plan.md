@@ -7,7 +7,8 @@
 - Use 640 x 480p60 RGB565 with a portable timing core and a later Gowin-specific
   DVI/TMDS output wrapper.
 - Use ready/valid interfaces and keep rendering independent of physical SDRAM.
-- Use project RTL for SDR SDRAM after the exact memory part is verified.
+- Use Gowin's embedded SDRAM controller only at the fixed SiP boundary; keep
+  project scheduling, buffering, scanout, and rendering behind its user port.
 - Use Pico SDK 2.3.1, SPI mode 0 at an initial 8 MHz, and Pong for the demo.
 
 ## Build Order
@@ -21,14 +22,14 @@
 7. Double-buffer ownership and VBlank presentation.
 8. Board constraints, DVI/TMDS output, hardware bring-up, and Pong measurements.
 
-Each item is a self-checking vertical slice. Hardware acceptance remains pending
-until the FPGA board arrives on 2026-10-15.
+Each item is a self-checking vertical slice. All ordered hardware arrived by
+2026-10-06; each board slice still requires an explicit physical observation.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
-| Exact SDRAM part or board revision differs | Keep timing/address parameters isolated; verify markings and schematic first |
+| Embedded SDRAM integration differs from the reference | Preserve exact SiP port names; pin the official controller; verify full-memory readback |
 | Scanout misses deadlines | Parameterized FIFO threshold, bounded write bursts, underflow counter |
 | HDMI serialization is vendor-specific | Keep `video_timing` portable and isolate primitives in `video_out` |
 | SPI crosses clock domains incorrectly | Freeze protocol first; use coherent byte/packet crossing and CDC tests |

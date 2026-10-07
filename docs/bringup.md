@@ -9,8 +9,9 @@
 - Windows enumerates both FTDI channels as `USB Serial Converter A/B`; the
   associated serial ports are COM4 and COM5.
 - The RP2040 board, video connector, cables, and jumper wiring are available.
-- The exact SDRAM component marking and RP2040 board model still need to be
-  recorded before those interfaces are enabled.
+- The memory is the GW2AR-18's embedded 64-Mbit SDR SDRAM, so there is no
+  separate SDRAM package marking to record. The exact RP2040 board model still
+  needs to be recorded before its hardware interface is enabled.
 
 ## Selected Baseline
 
@@ -32,6 +33,8 @@
 - Gowin EDA 1.9.11.03: https://www.gowinsemi.com/en/document/main/database/1865/
 - Verilator installation: https://veripool.org/guide/latest/install.html
 - Pico SDK 2.3.1: https://www.raspberrypi.com/documentation/pico-sdk/
+- Gowin SDRAM controller: https://www.gowinsemi.com/en/support/ip_detail/5/
+- Gowin SDRAM controller guide: https://www.gowinsemi.com/upload/database_doc/2057/document/6820d99fcc4d1.pdf
 
 ## Verified FPGA LED Slice
 
@@ -81,6 +84,31 @@ The DVI build retains the same documented `PR1014` oscillator-pin warning as
 the LED build. The generated clocks are reported at exactly 126.000 MHz and
 25.200 MHz, and the design closes timing with substantial margin.
 
+## SDRAM Readback Slice
+
+- Organization: 2,097,152 32-bit words (8 MiB), exposed through the GW2AR-18
+  embedded SDRAM controller's 21-bit word address.
+- Boundary: unmodified encrypted controller from Gowin's official GW2AR-18
+  reference design; project-owned RTL implements the self-test and status.
+- Clocking: the 27 MHz oscillator feeds one rPLL at 162 MHz. A hardware sweep
+  tested all 16 equal-frequency SDRAM clock phases with the full BIST. Phase 10
+  was the first passing position; the characterized window midpoint, phase 11
+  (247.5 degrees), is fixed in the production clock wrapper.
+- Test: write and read every word with a unique address-derived pattern, then
+  repeat with every bit inverted. Any mismatch or controller timeout is sticky.
+- Simulation: self-checking tests cover both complete pattern passes, injected
+  read corruption, and initialization timeout.
+- Timing: zero setup/hold violations at 162 MHz; reported Fmax is 162.442 MHz.
+- Utilization: 703 logic elements, 630 registers, one BSRAM, and one rPLL.
+- Volatile SRAM programming completed successfully on 2026-10-06. User code
+  was `0x0000C222`; status code was `0x00006020`.
+- Physical result: hardware passed both patterns across all 2,097,152 words at
+  the fixed phase-11 setting. Final LEDs showed reset, initialization,
+  acknowledgement, read-valid, and pass; the mismatch LED remained off.
+
+The decision to use the vendor controller only at the SiP boundary is recorded
+in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
+
 ## Reproduce
 
 ```powershell
@@ -89,6 +117,8 @@ pwsh -File scripts/build_led.ps1
 pwsh -File scripts/program_led_sram.ps1
 pwsh -File scripts/build_dvi.ps1
 pwsh -File scripts/program_dvi_sram.ps1
+pwsh -File scripts/build_sdram_bist.ps1
+pwsh -File scripts/program_sdram_bist_sram.ps1
 ```
 
 The programming script uses SRAM operation 2 only. It does not write onboard
@@ -96,8 +126,6 @@ flash; removing power restores the prior FPGA configuration.
 
 ## Remaining Hardware Verification
 
-- Board revision and SDRAM component marking.
-- Schematic revision, remaining FPGA pin map, I/O standards, and voltages.
-- Legal PLL outputs for SDRAM clocks.
+- Board/schematic revision, remaining FPGA pin map, I/O standards, and voltages.
 
 No hardware milestone is marked complete before these checks.

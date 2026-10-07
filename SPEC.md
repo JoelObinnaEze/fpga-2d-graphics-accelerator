@@ -104,7 +104,7 @@ Proposed modules:
 | `framebuffer_bram` | Small portable framebuffer used before SDRAM integration |
 | `write_fifo`, `read_fifo` | Decoupling of render, memory, and scanout rates |
 | `memory_arbiter` | Scheduling of scanout reads, renderer writes, and refresh |
-| `sdram_controller` | Verified initialization, refresh, reads, and writes for the exact memory |
+| `sdram_adapter` | Project request/burst adaptation around Gowin's embedded SDRAM controller |
 | `frame_swap` | Buffer ownership and safe presentation |
 | `top` | Board clock, reset, pins, and backend integration |
 
@@ -113,7 +113,8 @@ Proposed modules:
 Selected stack:
 
 - FPGA board: Tang Nano 20K, GW2AR-LV18QN88C8/I7.
-- Memory: onboard 64-Mbit, 32-bit SDR SDRAM; exact component is verified on arrival.
+- Memory: 64-Mbit, 32-bit SDR SDRAM embedded in the GW2AR-18 system-in-package;
+  2,097,152 words are exposed through a 21-bit word address.
 - Input clock: onboard 27 MHz crystal; generated clocks remain board-verified values.
 - Video: onboard HDMI connector carrying DVI-compatible 640 x 480p60 output.
 - Host board: generic RP2040 board, SPI mode 0, MSB first, initially 8 MHz.
@@ -125,7 +126,7 @@ Selected stack:
 
 Before board-specific RTL or constraints, record in `docs/bringup.md`:
 
-- Exact boards, FPGA device, SDRAM part, memory organization, and data sheets.
+- Exact boards, FPGA device, embedded SDRAM organization, and data sheets.
 - Board oscillator, legal PLL configuration, clock targets, and reset sources.
 - Video connector, electrical signaling, encoding, and pin mapping.
 - FPGA I/O voltages and RP2040-to-FPGA wiring.
@@ -147,6 +148,8 @@ Required command categories:
 | FPGA LED volatile SRAM programming | `pwsh -File scripts/program_led_sram.ps1` |
 | FPGA DVI synthesis/place-and-route | `pwsh -File scripts/build_dvi.ps1` |
 | FPGA DVI volatile SRAM programming | `pwsh -File scripts/program_dvi_sram.ps1` |
+| FPGA SDRAM BIST synthesis/place-and-route | `pwsh -File scripts/build_sdram_bist.ps1` |
+| FPGA SDRAM BIST volatile SRAM programming | `pwsh -File scripts/program_sdram_bist_sram.ps1` |
 | Timing and utilization reports | `build/gowin/<target>/impl/pnr/` |
 | RP2040 firmware configure/build/flash | TBD in Stage 0 |
 
@@ -268,9 +271,15 @@ Every later video or memory crossing must be documented and implemented with a s
 
 ## SDRAM and Arbitration Contract
 
-The physical SDRAM controller shall not be implemented until the exact part and required timings are verified. Its specification must include initialization, refresh, burst behavior, address mapping, read/write latency, and legal command spacing.
+Use Gowin's official embedded SDRAM controller for initialization, refresh,
+physical commands, and the fixed package-internal interface. Preserve its
+license and exact SDRAM-side top-level port names. Project-owned RTL shall wrap
+the controller's 21-bit word-addressed, 32-bit user interface and isolate it
+from the logical framebuffer interface. See ADR-001.
 
-A vendor or reviewed third-party controller may be used if its license is preserved and it is wrapped by the project framebuffer interface and verified in simulation and hardware.
+Controller integration must be verified in simulation and hardware, including
+clock phase, request/acknowledge behavior, read-valid timing, full address
+coverage, and complementary data patterns.
 
 The arbiter shall:
 
@@ -375,12 +384,12 @@ The project is complete only when:
 
 ## Deferred Hardware Verification
 
-- Confirm the board revision, SDRAM component marking, pins, and I/O voltages on
-  2026-10-15 before enabling board constraints.
+- Confirm the board/schematic revision and remaining external I/O voltages
+  before enabling the RP2040 constraints.
 - Confirm generated pixel, serializer, and memory clocks in Gowin timing reports.
 - Start with a 512-pixel scanout FIFO, a 256-pixel low-water mark, and write
   bursts capped at 32 pixels; retain these as tunable parameters until measured.
-- Implement the SDR SDRAM controller as project RTL behind the logical memory
-  interface, using timing parameters from the confirmed component data sheet.
+- Keep the official embedded SDRAM controller behind a project-owned adapter,
+  as recorded in ADR-001.
 - Store sprites as RGB565 words plus a separate one-bit opacity mask.
 - Use Pong as the final demonstration.
