@@ -33,6 +33,8 @@ run_test tb_video_timing sim/video.f
 run_test tb_tmds_encoder sim/tmds_encoder.f
 run_test tb_tang_nano_20k_led sim/tang_nano_20k_led.f
 run_test tb_async_fifo sim/async_fifo.f
+run_test tb_framebuffer_read_prefetch sim/framebuffer_read_prefetch.f
+run_test tb_framebuffer_read_path sim/framebuffer_read_path.f
 run_test tb_sdram_bist sim/sdram_bist.f
 run_test tb_sdram_pixel_adapter sim/sdram_pixel_adapter.f
 run_test tb_framebuffer_scanout sim/framebuffer.f

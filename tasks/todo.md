@@ -46,7 +46,9 @@ Verify: focused sprite test plus the full test script.
 - [x] Integrate the official embedded controller and a full-memory two-pattern BIST.
 - [x] Characterize the SDRAM clock phase and confirm the full physical BIST.
 - [x] Implement and verify a dual-clock FIFO for video/memory CDC.
-- [ ] Implement framebuffer bursts and read/write FIFOs.
+- [x] Implement bounded framebuffer read prefetch and verify it through the
+  arbiter and SDRAM pixel adapter.
+- [ ] Implement the renderer write FIFO and backend drain path.
 - [ ] Prove scanout priority and renderer progress through the SDRAM adapter.
 
 Verify: `pwsh -File scripts/test.ps1`, then the SDRAM build/program scripts.

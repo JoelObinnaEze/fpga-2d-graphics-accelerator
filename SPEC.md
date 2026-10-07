@@ -301,6 +301,13 @@ synchronizers; multi-bit payloads shall remain in dual-port storage rather than
 passing through independent bit synchronizers. Both FIFO domains must be reset
 together before traffic begins.
 
+The controller-domain read prefetcher issues sequential pixel addresses in
+bounded logical bursts. It starts a new burst only when the prior burst has
+drained and write-domain FIFO occupancy is at or below the low-water mark.
+Accepted reads count as reserved FIFO slots until their responses enter the
+FIFO, so a delayed response cannot overcommit capacity. The initial tunable
+values remain a 512-pixel FIFO, a 256-pixel low-water mark, and 32-pixel bursts.
+
 On scanout underflow, output a documented fallback pixel and latch an error. Never replay stale FIFO data as valid video.
 
 ## Frame-Presentation Contract
