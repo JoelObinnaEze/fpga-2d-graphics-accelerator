@@ -6,7 +6,7 @@ module tb_framebuffer_read_prefetch;
     localparam int unsigned FIFO_LOW_WATER = 3;
     localparam int unsigned BURST_PIXELS = 6;
     localparam int unsigned CAPACITY_LIMITED_BURST =
-        FIFO_DEPTH - FIFO_LOW_WATER;
+        ((FIFO_DEPTH - FIFO_LOW_WATER) / 2) * 2;
     localparam int unsigned FIFO_LEVEL_WIDTH = $clog2(FIFO_DEPTH + 1);
     // Cross the split-counter carry boundary (4095 -> 4096).
     localparam logic [21:0] BASE_ADDRESS = 22'd4090;
@@ -27,10 +27,10 @@ module tb_framebuffer_read_prefetch;
     logic [21:0] request_pixel_address;
     logic response_valid;
     logic response_ready;
-    logic [15:0] response_read_data;
+    logic [31:0] response_read_data;
 
     int unsigned accepted_requests;
-    int unsigned accepted_responses;
+    int unsigned accepted_words;
 
     initial begin
         clk = 1'b0;
@@ -76,36 +76,52 @@ module tb_framebuffer_read_prefetch;
         accepted_requests++;
     endtask
 
-    task automatic return_pixel(
-        input logic [15:0] value,
+    task automatic return_word(
+        input int unsigned first_pixel,
         input bit stall_fifo
     );
         @(negedge clk);
-        response_read_data = value;
-        response_valid = 1'b1;
-        if (stall_fifo) begin
+        if (stall_fifo)
             fifo_write_ready = 1'b0;
-            repeat (3) begin
-                @(posedge clk);
-                #1;
-                if (response_ready)
-                    $fatal(1, "response was accepted while FIFO was stalled");
-                if (!fifo_write_valid || fifo_write_data != value)
-                    $fatal(1, "response payload was not held during FIFO stall");
-            end
-            @(negedge clk);
-            fifo_write_ready = 1'b1;
-        end
+        response_read_data = {
+            16'h8000 + 16'(first_pixel + 1),
+            16'h8000 + 16'(first_pixel)
+        };
+        response_valid = 1'b1;
         #1;
-        if (!response_ready || !fifo_write_valid || fifo_write_data != value)
-            $fatal(1, "FIFO did not accept %04x: active=%0b response_valid=%0b response_ready=%0b fifo_valid=%0b fifo_ready=%0b fifo_data=%04x",
-                   value, active, response_valid, response_ready,
-                   fifo_write_valid, fifo_write_ready, fifo_write_data);
+        if (!response_ready || fifo_write_valid)
+            $fatal(1, "packed response was not accepted into an empty unpack buffer");
         @(posedge clk);
         #1;
         response_valid = 1'b0;
-        accepted_responses++;
-        fifo_write_level = FIFO_LEVEL_WIDTH'(int'(fifo_write_level) + 1);
+        accepted_words++;
+
+        if (stall_fifo) begin
+            repeat (3) begin
+                @(posedge clk);
+                #1;
+                if (!fifo_write_valid ||
+                    fifo_write_data != 16'h8000 + 16'(first_pixel))
+                    $fatal(1, "lower pixel was not held during FIFO stall");
+            end
+            @(negedge clk);
+            fifo_write_ready = 1'b1;
+        end else begin
+            @(negedge clk);
+        end
+
+        for (int half = 0; half < 2; half++) begin
+            if (!fifo_write_valid ||
+                fifo_write_data != 16'h8000 + 16'(first_pixel + half))
+                $fatal(1, "unpacked pixel mismatch at pixel %0d: got %04x",
+                       first_pixel + half, fifo_write_data);
+            @(posedge clk);
+            #1;
+            fifo_write_level =
+                FIFO_LEVEL_WIDTH'(int'(fifo_write_level) + 1);
+            if (half == 0)
+                @(negedge clk);
+        end
     endtask
 
     initial begin
@@ -118,7 +134,7 @@ module tb_framebuffer_read_prefetch;
         response_valid = 1'b0;
         response_read_data = '0;
         accepted_requests = 0;
-        accepted_responses = 0;
+        accepted_words = 0;
 
         repeat (3) @(posedge clk);
         rst = 1'b0;
@@ -144,15 +160,15 @@ module tb_framebuffer_read_prefetch;
                 $fatal(1, "request changed while backend was stalled");
         end
 
-        for (int i = 0; i < BURST_PIXELS; i++)
-            accept_request(BASE_ADDRESS + 22'(i));
+        for (int i = 0; i < BURST_PIXELS / 2; i++)
+            accept_request(BASE_ADDRESS + 22'(2 * i));
 
         @(negedge clk);
         if (request_valid)
             $fatal(1, "prefetcher exceeded the configured burst length");
 
-        for (int i = 0; i < BURST_PIXELS; i++)
-            return_pixel(16'h8000 + 16'(i), i == 0);
+        for (int i = 0; i < BURST_PIXELS; i += 2)
+            return_word(i, i == 0);
 
         repeat (3) @(posedge clk);
         if (request_valid)
@@ -160,14 +176,14 @@ module tb_framebuffer_read_prefetch;
 
         fifo_write_level = FIFO_LEVEL_WIDTH'(FIFO_LOW_WATER);
         for (int i = BURST_PIXELS;
-             i < BURST_PIXELS + CAPACITY_LIMITED_BURST; i++)
+             i < BURST_PIXELS + CAPACITY_LIMITED_BURST; i += 2)
             accept_request(BASE_ADDRESS + 22'(i));
         @(negedge clk);
         if (request_valid)
             $fatal(1, "prefetcher overcommitted the available FIFO slots");
         for (int i = BURST_PIXELS;
-             i < BURST_PIXELS + CAPACITY_LIMITED_BURST; i++)
-            return_pixel(16'h8000 + 16'(i), 1'b0);
+             i < BURST_PIXELS + CAPACITY_LIMITED_BURST; i += 2)
+            return_word(i, 1'b0);
 
         repeat (3) @(posedge clk);
         if (request_valid)
@@ -175,28 +191,28 @@ module tb_framebuffer_read_prefetch;
 
         fifo_write_level = FIFO_LEVEL_WIDTH'(FIFO_LOW_WATER);
         for (int i = BURST_PIXELS + CAPACITY_LIMITED_BURST;
-             i < FRAME_PIXELS; i++)
+             i < FRAME_PIXELS; i += 2)
             accept_request(BASE_ADDRESS + 22'(i));
         for (int i = BURST_PIXELS + CAPACITY_LIMITED_BURST;
-             i < FRAME_PIXELS; i++) begin
-            return_pixel(16'h8000 + 16'(i), 1'b0);
-            if (i != FRAME_PIXELS - 1 && complete)
+             i < FRAME_PIXELS; i += 2) begin
+            return_word(i, 1'b0);
+            if (i != FRAME_PIXELS - 2 && complete)
                 $fatal(1, "prefetcher completed before the final response");
         end
 
         if (!complete || active || !start_ready)
             $fatal(1, "prefetcher did not complete on the final FIFO transfer");
-        if (accepted_requests != FRAME_PIXELS ||
-            accepted_responses != FRAME_PIXELS)
-            $fatal(1, "prefetch count mismatch: requests=%0d responses=%0d",
-                   accepted_requests, accepted_responses);
+        if (accepted_requests != FRAME_PIXELS / 2 ||
+            accepted_words != FRAME_PIXELS / 2)
+            $fatal(1, "prefetch count mismatch: requests=%0d words=%0d",
+                   accepted_requests, accepted_words);
 
         @(posedge clk);
         #1;
         if (complete)
             $fatal(1, "complete must be a one-cycle pulse");
 
-        $display("PASS: bounded framebuffer prefetch, capacity, stalls, and completion");
+        $display("PASS: bounded packed-word prefetch, unpacking, stalls, and completion");
         $finish;
     end
 endmodule

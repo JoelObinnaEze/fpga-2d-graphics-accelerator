@@ -7,7 +7,7 @@ module tb_framebuffer_read_path;
     localparam int unsigned BURST_PIXELS = 2;
     localparam int unsigned WRITE_FIFO_DEPTH = 4;
     localparam int unsigned FIFO_LEVEL_WIDTH = $clog2(FIFO_DEPTH + 1);
-    localparam logic [21:0] BASE_ADDRESS = 22'd101;
+    localparam logic [21:0] BASE_ADDRESS = 22'd100;
 
     logic clk;
     logic rst;
@@ -43,7 +43,7 @@ module tb_framebuffer_read_path;
     logic refresh_ready;
     logic adapter_response_valid;
     logic adapter_response_ready;
-    logic [15:0] adapter_response_data;
+    logic [31:0] adapter_response_data;
     logic write_committed;
     logic controller_init_done;
     logic controller_busy_n;
@@ -205,12 +205,13 @@ module tb_framebuffer_read_path;
         renderer_write_valid = 1'b0;
     endtask
 
-    task automatic service_read(input int unsigned pixel_offset);
+    task automatic service_read_pair(input int unsigned first_pixel_offset);
         logic [21:0] expected_pixel_address;
-        logic [15:0] expected_data;
-        expected_pixel_address = BASE_ADDRESS + 22'(pixel_offset);
-        expected_data = 16'hA000 + 16'(pixel_offset);
-
+        logic [15:0] expected_lower;
+        logic [15:0] expected_upper;
+        expected_pixel_address = BASE_ADDRESS + 22'(first_pixel_offset);
+        expected_lower = 16'hA000 + 16'(first_pixel_offset);
+        expected_upper = 16'hA000 + 16'(first_pixel_offset + 1);
         @(negedge clk);
         while (controller_read_n)
             @(negedge clk);
@@ -227,9 +228,7 @@ module tb_framebuffer_read_path;
         controller_ack = 1'b0;
 
         @(negedge clk);
-        controller_read_data = expected_pixel_address[0]
-                             ? {expected_data, 16'hbeef}
-                             : {16'hdead, expected_data};
+        controller_read_data = {expected_upper, expected_lower};
         controller_read_valid = 1'b1;
         @(posedge clk);
         #1;
@@ -237,7 +236,6 @@ module tb_framebuffer_read_path;
 
         @(negedge clk);
         controller_busy_n = 1'b1;
-        wait (received_pixels == pixel_offset + 1);
     endtask
 
     task automatic service_write(
@@ -254,7 +252,6 @@ module tb_framebuffer_read_path;
         expected_write_data = expected_pixel_address[0]
                             ? {expected_data, 16'd0}
                             : {16'd0, expected_data};
-
         @(negedge clk);
         while (controller_write_n)
             @(negedge clk);
@@ -327,26 +324,26 @@ module tb_framebuffer_read_path;
             begin
                 // The empty scanout FIFO forces both initial reads ahead of
                 // the queued renderer writes.
-                service_read(0);
-                service_read(1);
+                service_read_pair(0);
+                service_write(0, 1'b0);
+                wait (received_pixels == 2);
                 if (int'(fifo_write_level) != 2)
                     $fatal(1, "initial scanout burst did not fill the FIFO");
 
                 // Rendering progresses while scanout is healthy. Consuming a
-                // pixel during the first write makes the next scanout burst
-                // preempt the third queued write after the two-write bound.
-                service_write(0, 1'b1);
-                service_write(1, 1'b0);
-                service_read(2);
-                service_read(3);
+                // pixel during the second write schedules the next packed-word
+                // read while the final queued write drains.
+                service_write(1, 1'b1);
                 service_write(2, 1'b0);
+                service_read_pair(2);
+                wait (received_pixels == 4);
 
                 if (int'(fifo_write_level) != 3)
                     $fatal(1, "unexpected FIFO level after concurrent traffic");
                 consume_one();
                 consume_one();
-                service_read(4);
-                service_read(5);
+                service_read_pair(4);
+                wait (received_pixels == FRAME_PIXELS);
             end
         join
 

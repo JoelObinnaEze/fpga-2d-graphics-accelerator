@@ -97,7 +97,7 @@ module sdram_framebuffer_core #(
     logic address_upper_zero;
     logic adapter_response_valid;
     logic adapter_response_ready;
-    logic [15:0] adapter_response_data;
+    logic [31:0] adapter_response_data;
 
     logic framebuffer_ready_sync1;
     logic framebuffer_ready_sync2;

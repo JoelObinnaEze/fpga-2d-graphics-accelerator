@@ -2,12 +2,14 @@
 
 // Controller-clock-domain framebuffer reader.
 //
-// A start transfer schedules FRAME_PIXELS sequential RGB565 pixel reads from
-// start_pixel_address. Reads are grouped into bounded logical bursts. A new
+// A start transfer schedules FRAME_PIXELS sequential RGB565 pixels from an
+// even start_pixel_address. Each SDRAM request fetches one packed 32-bit word;
+// its lower and upper RGB565 halves are written to the FIFO on consecutive
+// transfers. Reads are grouped into bounded, even-sized logical bursts. A new
 // burst starts only after the previous burst has drained and FIFO occupancy is
 // at or below FIFO_LOW_WATER. When the low-water mark plus a full burst fits,
-// that static bound reserves every delayed response slot; smaller FIFOs also
-// receive an exact capacity check.
+// that static bound reserves every delayed pixel slot; smaller FIFOs also
+// receive an exact capacity check rounded down to a whole packed word.
 //
 // All request, response, and FIFO signals use valid/ready transfers. Payloads
 // remain stable while stalled. complete pulses only after the final response is
@@ -34,7 +36,7 @@ module framebuffer_read_prefetch #(
     output logic [21:0] request_pixel_address,
     input  logic response_valid,
     output logic response_ready,
-    input  logic [15:0] response_read_data
+    input  logic [31:0] response_read_data
 );
     localparam int unsigned FRAME_COUNT_WIDTH =
         FRAME_PIXELS < 2 ? 1 : $clog2(FRAME_PIXELS + 1);
@@ -55,13 +57,17 @@ module framebuffer_read_prefetch #(
     state_t state;
     logic [21:0] next_pixel_address;
     logic [FRAME_COUNT_WIDTH-1:0] pixels_remaining;
-    logic [FRAME_COUNT_WIDTH-1:0] responses_received;
+    logic [FRAME_COUNT_WIDTH-1:0] pixels_written;
     logic [BURST_COUNT_WIDTH-1:0] burst_remaining;
-    logic [OUTSTANDING_WIDTH-1:0] outstanding_reads;
+    logic [OUTSTANDING_WIDTH-1:0] outstanding_pixels;
     logic outstanding_empty;
     logic request_fire;
     logic response_fire;
+    logic fifo_write_fire;
     logic level_settling;
+    logic unpack_valid;
+    logic unpack_upper;
+    logic [31:0] unpack_word;
     int unsigned reserved_slots;
     int unsigned available_slots;
     int unsigned planned_burst;
@@ -69,16 +75,19 @@ module framebuffer_read_prefetch #(
     initial begin
         if (FRAME_PIXELS == 0)
             $error("FRAME_PIXELS must be greater than zero");
+        if (FRAME_PIXELS % 2 != 0)
+            $error("FRAME_PIXELS must be even for packed-word reads");
         if (FIFO_DEPTH < 2)
             $error("FIFO_DEPTH must be at least two");
         if (FIFO_LOW_WATER >= FIFO_DEPTH)
             $error("FIFO_LOW_WATER must be below FIFO_DEPTH");
-        if (BURST_PIXELS == 0 || BURST_PIXELS > FIFO_DEPTH)
-            $error("BURST_PIXELS must be between one and FIFO_DEPTH");
+        if (BURST_PIXELS < 2 || BURST_PIXELS > FIFO_DEPTH ||
+            BURST_PIXELS % 2 != 0)
+            $error("BURST_PIXELS must be even and between two and FIFO_DEPTH");
     end
 
     always_comb begin
-        reserved_slots = int'(fifo_write_level) + int'(outstanding_reads);
+        reserved_slots = int'(fifo_write_level) + int'(outstanding_pixels);
         if (reserved_slots >= FIFO_DEPTH)
             available_slots = 0;
         else
@@ -89,17 +98,22 @@ module framebuffer_read_prefetch #(
             planned_burst = int'(pixels_remaining);
         if (CAPACITY_CHECK_REQUIRED && planned_burst > available_slots)
             planned_burst = available_slots;
+        planned_burst = (planned_burst / 2) * 2;
 
         start_ready = !active;
         request_valid = active && state == ISSUE_BURST &&
                         burst_remaining != 0 &&
                         (!CAPACITY_CHECK_REQUIRED || available_slots != 0);
         request_pixel_address = next_pixel_address;
-        response_ready = active && fifo_write_ready;
-        fifo_write_valid = active && response_valid;
-        fifo_write_data = response_read_data;
+        response_ready = active && !unpack_valid &&
+                         outstanding_pixels != 0;
+        fifo_write_valid = active && unpack_valid;
+        fifo_write_data = unpack_upper ? unpack_word[31:16]
+                                       : unpack_word[15:0];
         request_fire = request_valid && request_ready;
         response_fire = response_valid && response_ready;
+        fifo_write_fire = fifo_write_valid && fifo_write_ready;
+        outstanding_empty = outstanding_pixels == 0;
     end
 
     always_ff @(posedge clk) begin
@@ -109,24 +123,27 @@ module framebuffer_read_prefetch #(
             complete <= 1'b0;
             next_pixel_address <= '0;
             pixels_remaining <= '0;
-            responses_received <= '0;
+            pixels_written <= '0;
             burst_remaining <= '0;
-            outstanding_reads <= '0;
-            outstanding_empty <= 1'b1;
+            outstanding_pixels <= '0;
             level_settling <= 1'b0;
+            unpack_valid <= 1'b0;
+            unpack_upper <= 1'b0;
+            unpack_word <= '0;
         end else begin
             complete <= 1'b0;
-            level_settling <= response_fire;
+            level_settling <= fifo_write_fire;
 
             if (start_valid && start_ready) begin
                 state <= WAIT_REFILL;
                 active <= 1'b1;
                 next_pixel_address <= start_pixel_address;
                 pixels_remaining <= FRAME_COUNT_WIDTH'(FRAME_PIXELS);
-                responses_received <= '0;
+                pixels_written <= '0;
                 burst_remaining <= '0;
-                outstanding_reads <= '0;
-                outstanding_empty <= 1'b1;
+                outstanding_pixels <= '0;
+                unpack_valid <= 1'b0;
+                unpack_upper <= 1'b0;
             end else if (active) begin
                 case (state)
                     WAIT_REFILL: begin
@@ -142,22 +159,19 @@ module framebuffer_read_prefetch #(
 
                     ISSUE_BURST: begin
                         if (request_fire) begin
-                            // Pixel addresses increment every request, but the
-                            // word portion increments only after an odd pixel.
-                            // Splitting its carry at bit 11 keeps this counter
-                            // off the long 162 MHz carry path.
-                            next_pixel_address[0] <=
-                                ~next_pixel_address[0];
-                            if (next_pixel_address[0]) begin
-                                next_pixel_address[11:1] <=
-                                    next_pixel_address[11:1] + 1'b1;
-                                if (next_pixel_address[11:1] == 11'h7ff)
-                                    next_pixel_address[21:12] <=
-                                        next_pixel_address[21:12] + 1'b1;
-                            end
-                            pixels_remaining <= pixels_remaining - 1'b1;
-                            burst_remaining <= burst_remaining - 1'b1;
-                            if (burst_remaining == 1)
+                            // One request advances one packed SDRAM word, or
+                            // two pixels. Splitting the word-address carry at
+                            // bit 11 keeps it off the long 162 MHz carry path.
+                            next_pixel_address[11:1] <=
+                                next_pixel_address[11:1] + 1'b1;
+                            if (next_pixel_address[11:1] == 11'h7ff)
+                                next_pixel_address[21:12] <=
+                                    next_pixel_address[21:12] + 1'b1;
+                            pixels_remaining <= pixels_remaining -
+                                                FRAME_COUNT_WIDTH'(2);
+                            burst_remaining <= burst_remaining -
+                                               BURST_COUNT_WIDTH'(2);
+                            if (burst_remaining <= BURST_COUNT_WIDTH'(2))
                                 state <= WAIT_REFILL;
                         end
                     end
@@ -166,8 +180,19 @@ module framebuffer_read_prefetch #(
                 endcase
 
                 if (response_fire) begin
-                    responses_received <= responses_received + 1'b1;
-                    if (responses_received ==
+                    unpack_valid <= 1'b1;
+                    unpack_upper <= 1'b0;
+                    unpack_word <= response_read_data;
+                end
+
+                if (fifo_write_fire) begin
+                    pixels_written <= pixels_written + 1'b1;
+                    if (unpack_upper)
+                        unpack_valid <= 1'b0;
+                    else
+                        unpack_upper <= 1'b1;
+
+                    if (pixels_written ==
                         FRAME_COUNT_WIDTH'(FRAME_PIXELS - 1)) begin
                         state <= IDLE;
                         active <= 1'b0;
@@ -175,20 +200,16 @@ module framebuffer_read_prefetch #(
                     end
                 end
 
-                case ({request_fire, response_fire})
+                case ({request_fire, fifo_write_fire})
                     2'b10: begin
-                        outstanding_reads <= outstanding_reads + 1'b1;
-                        outstanding_empty <= 1'b0;
+                        outstanding_pixels <= outstanding_pixels +
+                                              OUTSTANDING_WIDTH'(2);
                     end
                     2'b01: begin
-                        outstanding_reads <= outstanding_reads - 1'b1;
-                        if (outstanding_reads == 1)
-                            outstanding_empty <= 1'b1;
+                        outstanding_pixels <= outstanding_pixels - 1'b1;
                     end
-                    default: begin
-                        outstanding_reads <= outstanding_reads;
-                        outstanding_empty <= outstanding_empty;
-                    end
+                    2'b11: outstanding_pixels <= outstanding_pixels + 1'b1;
+                    default: outstanding_pixels <= outstanding_pixels;
                 endcase
             end
         end

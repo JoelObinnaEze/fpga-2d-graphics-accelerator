@@ -10,7 +10,7 @@ module sdram_pixel_adapter (
     input  logic [15:0] request_write_data,
     output logic        response_valid,
     input  logic        response_ready,
-    output logic [15:0] response_read_data,
+    output logic [31:0] response_read_data,
     output logic        write_committed,
     input  logic        controller_init_done,
     input  logic        controller_busy_n,
@@ -37,7 +37,6 @@ module sdram_pixel_adapter (
     state_t state;
     logic ack_seen;
     logic read_seen;
-    logic read_upper_half;
 
     assign request_ready = state == IDLE && controller_init_done &&
                            controller_busy_n &&
@@ -51,7 +50,6 @@ module sdram_pixel_adapter (
             state <= IDLE;
             ack_seen <= 1'b0;
             read_seen <= 1'b0;
-            read_upper_half <= 1'b0;
             response_read_data <= '0;
             write_committed <= 1'b0;
             controller_write_n <= 1'b1;
@@ -81,7 +79,6 @@ module sdram_pixel_adapter (
                             state <= WAIT_WRITE;
                         end else if (request_operation == OP_READ) begin
                             controller_data_mask <= 4'b0000;
-                            read_upper_half <= request_pixel_address[0];
                             controller_read_n <= 1'b0;
                             state <= WAIT_READ;
                         end
@@ -103,9 +100,7 @@ module sdram_pixel_adapter (
                         ack_seen <= 1'b1;
                     if (controller_read_valid) begin
                         read_seen <= 1'b1;
-                        response_read_data <= read_upper_half
-                                            ? controller_read_data[31:16]
-                                            : controller_read_data[15:0];
+                        response_read_data <= controller_read_data;
                     end
 
                     if ((ack_seen || controller_ack) &&

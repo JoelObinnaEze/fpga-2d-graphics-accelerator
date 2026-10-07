@@ -14,7 +14,7 @@ module tb_sdram_pixel_adapter;
     logic [15:0] request_write_data;
     logic response_valid;
     logic response_ready;
-    logic [15:0] response_read_data;
+    logic [31:0] response_read_data;
     logic write_committed;
     logic controller_init_done;
     logic controller_busy_n;
@@ -169,31 +169,32 @@ module tb_sdram_pixel_adapter;
         if (!write_committed)
             $fatal(1, "odd write completion was not reported");
 
-        issue_request(OP_READ, 22'd5, 16'd0);
+        issue_request(OP_READ, 22'd4, 16'd0);
         if (controller_read_n || !controller_write_n ||
             controller_address != 21'd2 || controller_data_mask != 0)
             $fatal(1, "read request mapping is incorrect");
 
         complete_read(32'hdead_beef);
-        if (!response_valid || response_read_data != 16'hdead || request_ready)
-            $fatal(1, "odd-pixel read response is incorrect");
+        if (!response_valid || response_read_data != 32'hdead_beef ||
+            request_ready)
+            $fatal(1, "packed-word read response is incorrect");
 
         repeat (3) begin
             @(posedge clk);
             #1;
-            if (!response_valid || response_read_data != 16'hdead)
+            if (!response_valid || response_read_data != 32'hdead_beef)
                 $fatal(1, "stalled read response was not held stable");
         end
 
         retire_response();
 
-        issue_request(OP_READ, 22'd4, 16'd0);
+        issue_request(OP_READ, 22'd6, 16'd0);
         complete_read(32'hcafe_5678);
-        if (!response_valid || response_read_data != 16'h5678)
-            $fatal(1, "even-pixel read response is incorrect");
+        if (!response_valid || response_read_data != 32'hcafe_5678)
+            $fatal(1, "second packed-word read response is incorrect");
         retire_response();
 
-        $display("PASS: SDRAM pixel packing, request pulses, completion, and response stalls");
+        $display("PASS: SDRAM word reads, pixel writes, completion, and response stalls");
         $finish;
     end
 endmodule

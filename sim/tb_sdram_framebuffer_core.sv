@@ -240,7 +240,7 @@ module tb_sdram_framebuffer_core;
 
         repeat (40) @(posedge pixel_clk);
         consume_and_check_frame();
-        if (scanout_underflow || controller_read_count < 2 * FRAME_PIXELS ||
+        if (scanout_underflow || controller_read_count < FRAME_PIXELS ||
             completed_prefetch_frames == 0 || !prefetch_active)
             $fatal(1, "continuous prefetch did not deliver the second frame");
 

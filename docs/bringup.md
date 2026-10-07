@@ -109,37 +109,41 @@ the LED build. The generated clocks are reported at exactly 126.000 MHz and
 The decision to use the vendor controller only at the SiP boundary is recorded
 in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
 
-## SDRAM Scanout Candidate (Not Yet Hardware-Verified)
+## SDRAM Scanout Bring-up
 
 - Resolution and format: 640 x 480 RGB565, initialized to eight vertical color
   bars through the same queued write and real SDRAM commit path used by later
   renderers.
 - Scanout: 512-pixel dual-clock FIFO, 256-pixel refill threshold, 32-pixel
   logical read bursts, VBlank-gated startup, and black fallback with a sticky
-  underflow indicator.
+  underflow indicator. Each 32-bit SDRAM read now supplies both packed RGB565
+  pixels to the FIFO, lower half first and upper half second.
 - Clocking: 25.2 MHz pixel clock, 126 MHz TMDS serializer clock, and the
   hardware-characterized 162 MHz controller/phase-11 SDRAM clocks.
 - Simulation: initialization, delayed commits, cross-domain prefetch, complete
   and repeated frames, backpressure, address carry boundaries, and forced
   underflow pass in the full self-checking suite.
 - Place-and-route timing: all setup, hold, recovery, and removal TNS values are
-  zero. Reported Fmax is 62.669 MHz for the 25.2 MHz pixel domain and
-  162.310 MHz for the 161.996 MHz controller constraint.
-- Utilization: 2,399 logic elements (12%), 912 registers (6%), four BSRAMs,
+  zero. Reported Fmax is 60.565 MHz for the 25.2 MHz pixel domain and
+  162.202 MHz for the 161.996 MHz controller constraint.
+- Utilization: 2,388 logic elements (12%), 956 registers (6%), four BSRAMs,
   two rPLLs, one CLKDIV, and four OSER10 serializers.
-- Volatile SRAM programming completed successfully on 2026-10-06. User code
-  was `0x0000D8A8`; status code was `0x00006020`.
+- The first per-pixel-read candidate was programmed with user code `0x0000D8A8`.
+  Physical testing showed moving RGB and all six LEDs on; LED4 therefore
+  confirmed a sticky scanout underflow/protocol error. This matched the known
+  bandwidth risk: the adapter reread every 32-bit SDRAM word once per 16-bit
+  pixel and discarded half of each response.
+- The packed-word revision is covered by regressions proving that six ordered
+  pixels require exactly three SDRAM reads, including FIFO backpressure and an
+  address carry boundary. It was programmed into volatile SRAM on 2026-10-06
+  with user code `0x00003E55` and status code `0x00006020`.
 - Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
   LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
   underflow/protocol error, and LED5 at least one complete prefetch.
 
-This is a simulation-, timing-, and programming-verified candidate only. Its
-monitor output and final LED state have not yet been observed, so Stage 8
-remains open. The current pixel adapter performs one controller read per RGB565
-pixel even though two pixels share each 32-bit word; physical testing must
-confirm sustained bandwidth. If LED4 asserts or video is unstable, the next
-optimization is a word-pair read path that emits both pixels from each SDRAM
-response.
+The packed-word revision is simulation-, timing-, and programming-verified.
+Its monitor output and final LED state have not yet been observed, so Stage 8
+remains open pending the final physical check.
 
 ## Reproduce
 
@@ -160,8 +164,9 @@ flash; removing power restores the prior FPGA configuration.
 
 ## Remaining Hardware Verification
 
-- Volatile-program the SDRAM scanout candidate, confirm stable color bars, and
-  record the six LED states after at least one complete frame.
+- Confirm that the newly programmed packed-word scanout shows stable color bars
+  and record the six LED states after at least one complete frame. LED4 must be
+  off; LED0, LED1, LED2, LED3, and LED5 should be on.
 - Board/schematic revision, remaining FPGA pin map, I/O standards, and voltages.
 
 No hardware milestone is marked complete before these checks.
