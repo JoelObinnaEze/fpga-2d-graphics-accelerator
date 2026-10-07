@@ -295,6 +295,12 @@ The arbiter shall:
 - Guarantee renderer progress within a documented supported load.
 - Count scanout underflow, write overflow, protocol errors, and minimum read-FIFO occupancy.
 
+Video-to-memory FIFOs cross between independently generated 25.2 MHz pixel and
+162 MHz controller clocks. They shall use Gray-coded pointers with two-stage
+synchronizers; multi-bit payloads shall remain in dual-port storage rather than
+passing through independent bit synchronizers. Both FIFO domains must be reset
+together before traffic begins.
+
 On scanout underflow, output a documented fallback pixel and latch an error. Never replay stale FIFO data as valid video.
 
 ## Frame-Presentation Contract

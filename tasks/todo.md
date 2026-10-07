@@ -45,6 +45,7 @@ Verify: focused sprite test plus the full test script.
 - [x] Implement portable scanout/write/refresh arbitration with bounded write bursts.
 - [x] Integrate the official embedded controller and a full-memory two-pattern BIST.
 - [x] Characterize the SDRAM clock phase and confirm the full physical BIST.
+- [x] Implement and verify a dual-clock FIFO for video/memory CDC.
 - [ ] Implement framebuffer bursts and read/write FIFOs.
 - [ ] Prove scanout priority and renderer progress through the SDRAM adapter.
 
