@@ -2,10 +2,11 @@
 
 // Portable controller/pixel-domain core for SDRAM-backed RGB565 scanout.
 // The controller domain initializes one framebuffer with color bars, tracks
-// committed writes, and continuously prefetches sequential pixels. An
-// asynchronous FIFO carries pixels into the video domain. Scanout is enabled
-// only at VBlank after both initialization and FIFO prefill; underflow outputs
-// black and latches a sticky diagnostic.
+// committed writes, and continuously prefetches sequential pixel pairs. A
+// 32-bit asynchronous FIFO carries packed words into the video domain, where
+// each word is emitted as two RGB565 pixels. Scanout is enabled only at VBlank
+// after initialization and FIFO prefill; underflow outputs black and latches a
+// sticky diagnostic.
 module sdram_framebuffer_core #(
     parameter int unsigned FRAME_WIDTH = 640,
     parameter int unsigned FRAME_HEIGHT = 480,
@@ -41,8 +42,9 @@ module sdram_framebuffer_core #(
     output logic [31:0] controller_write_data
 );
     localparam int unsigned FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT;
+    localparam int unsigned READ_FIFO_WORD_DEPTH = READ_FIFO_DEPTH / 2;
     localparam int unsigned READ_LEVEL_WIDTH =
-        $clog2(READ_FIFO_DEPTH + 1);
+        $clog2(READ_FIFO_WORD_DEPTH + 1);
     localparam int unsigned WRITE_LEVEL_WIDTH =
         $clog2(WRITE_FIFO_DEPTH + 1);
 
@@ -74,18 +76,20 @@ module sdram_framebuffer_core #(
     logic prefetch_request_valid;
     logic prefetch_request_ready;
     logic [21:0] prefetch_request_address;
+    logic [7:0] prefetch_request_data_len;
     logic buffered_read_valid;
     logic buffered_read_ready;
     logic [21:0] buffered_read_address;
+    logic [7:0] buffered_read_data_len;
 
     logic [READ_LEVEL_WIDTH-1:0] read_fifo_write_level;
     logic [READ_LEVEL_WIDTH-1:0] scheduled_fifo_level;
     logic read_fifo_write_valid;
     logic read_fifo_write_ready;
-    logic [15:0] read_fifo_write_data;
+    logic [31:0] read_fifo_write_data;
     logic read_fifo_read_valid;
     logic read_fifo_read_ready;
-    logic [15:0] read_fifo_read_data;
+    logic [31:0] read_fifo_read_data;
     logic [READ_LEVEL_WIDTH-1:0] read_fifo_read_level;
 
     logic arbiter_memory_valid;
@@ -93,18 +97,25 @@ module sdram_framebuffer_core #(
     logic [1:0] arbiter_memory_operation;
     logic [31:0] arbiter_memory_address;
     logic [15:0] arbiter_memory_write_data;
+    logic [7:0] arbiter_memory_data_len;
     logic refresh_ready;
     logic address_upper_zero;
     logic adapter_response_valid;
     logic adapter_response_ready;
     logic [31:0] adapter_response_data;
+    logic adapter_read_protocol_error;
+    logic write_queue_protocol_error;
 
     logic framebuffer_ready_sync1;
     logic framebuffer_ready_sync2;
+    logic pixel_upper_half;
 
     initial begin
         if (FRAME_PIXELS == 0 || FRAME_PIXELS > 4194304)
             $error("frame size must fit the 22-bit pixel-address space");
+        if (FRAME_PIXELS % 2 != 0 || READ_FIFO_DEPTH % 2 != 0 ||
+            READ_FIFO_LOW_WATER % 2 != 0 || READ_BURST_PIXELS % 2 != 0)
+            $error("packed scanout parameters must be even");
     end
 
     assign initializer_start_valid = controller_init_done &&
@@ -146,7 +157,7 @@ module sdram_framebuffer_core #(
         .writes_committed,
         .queue_count(write_queue_count),
         .outstanding_count(outstanding_write_count),
-        .protocol_error(write_protocol_error)
+        .protocol_error(write_queue_protocol_error)
     );
 
     framebuffer_read_prefetch #(
@@ -169,13 +180,14 @@ module sdram_framebuffer_core #(
         .request_valid(prefetch_request_valid),
         .request_ready(prefetch_request_ready),
         .request_pixel_address(prefetch_request_address),
+        .request_data_len(prefetch_request_data_len),
         .response_valid(adapter_response_valid),
         .response_ready(adapter_response_ready),
         .response_read_data(adapter_response_data)
     );
 
     framebuffer_arbiter #(
-        .READ_FIFO_LOW_WATER(READ_FIFO_LOW_WATER),
+        .READ_FIFO_LOW_WATER(READ_FIFO_LOW_WATER / 2),
         .MAX_CONSECUTIVE_WRITES(32)
     ) arbiter (
         .clk(controller_clk),
@@ -184,6 +196,7 @@ module sdram_framebuffer_core #(
         .scanout_valid(buffered_read_valid),
         .scanout_ready(buffered_read_ready),
         .scanout_address({10'd0, buffered_read_address}),
+        .scanout_data_len(buffered_read_data_len),
         .write_valid(buffered_write_valid),
         .write_ready(buffered_write_ready),
         .write_address({10'd0, buffered_write_address}),
@@ -194,7 +207,8 @@ module sdram_framebuffer_core #(
         .memory_ready(arbiter_memory_ready),
         .memory_operation(arbiter_memory_operation),
         .memory_address(arbiter_memory_address),
-        .memory_write_data(arbiter_memory_write_data)
+        .memory_write_data(arbiter_memory_write_data),
+        .memory_data_len(arbiter_memory_data_len)
     );
 
     sdram_pixel_adapter adapter (
@@ -205,10 +219,12 @@ module sdram_framebuffer_core #(
         .request_operation(arbiter_memory_operation),
         .request_pixel_address(arbiter_memory_address[21:0]),
         .request_write_data(arbiter_memory_write_data),
+        .request_data_len(arbiter_memory_data_len),
         .response_valid(adapter_response_valid),
         .response_ready(adapter_response_ready),
         .response_read_data(adapter_response_data),
         .write_committed(adapter_write_committed),
+        .read_protocol_error(adapter_read_protocol_error),
         .controller_init_done,
         .controller_busy_n,
         .controller_ack,
@@ -223,10 +239,10 @@ module sdram_framebuffer_core #(
     );
 
     async_fifo #(
-        .WIDTH(16),
-        .DEPTH(READ_FIFO_DEPTH),
+        .WIDTH(32),
+        .DEPTH(READ_FIFO_WORD_DEPTH),
         // This module is the only writer, and its scheduler reserves no more
-        // than LOW_WATER + BURST slots (288 of 512 in hardware).
+        // than 144 of the 256 packed-word slots in hardware.
         .EXTERNAL_CAPACITY_CONTROL(1'b1)
     ) read_fifo (
         .write_clk(controller_clk),
@@ -248,6 +264,7 @@ module sdram_framebuffer_core #(
             scheduled_fifo_level <= '0;
             buffered_read_valid <= 1'b0;
             buffered_read_address <= '0;
+            buffered_read_data_len <= '0;
             buffered_write_valid <= 1'b0;
             buffered_write_address <= '0;
             buffered_write_data <= '0;
@@ -265,6 +282,7 @@ module sdram_framebuffer_core #(
             end else if (prefetch_request_valid) begin
                     buffered_read_valid <= 1'b1;
                     buffered_read_address <= prefetch_request_address;
+                    buffered_read_data_len <= prefetch_request_data_len;
             end
             if (buffered_write_valid) begin
                 if (buffered_write_ready)
@@ -298,6 +316,7 @@ module sdram_framebuffer_core #(
             framebuffer_ready_sync2 <= 1'b0;
             scanout_enabled <= 1'b0;
             scanout_underflow <= 1'b0;
+            pixel_upper_half <= 1'b0;
         end else begin
             framebuffer_ready_sync1 <= framebuffer_ready;
             framebuffer_ready_sync2 <= framebuffer_ready_sync1;
@@ -307,16 +326,26 @@ module sdram_framebuffer_core #(
                 read_fifo_read_valid)
                 scanout_enabled <= 1'b1;
 
-            if (scanout_enabled && active_video &&
-                !read_fifo_read_valid)
-                scanout_underflow <= 1'b1;
+            if (scanout_enabled && active_video) begin
+                if (read_fifo_read_valid)
+                    pixel_upper_half <= ~pixel_upper_half;
+                else begin
+                    pixel_upper_half <= 1'b0;
+                    scanout_underflow <= 1'b1;
+                end
+            end
         end
     end
 
     always_comb begin
         address_upper_zero = arbiter_memory_address[31:22] == 0;
-        read_fifo_read_ready = scanout_enabled && active_video;
+        read_fifo_read_ready = scanout_enabled && active_video &&
+                               read_fifo_read_valid && pixel_upper_half;
         pixel = scanout_enabled && active_video && read_fifo_read_valid
-              ? read_fifo_read_data : 16'h0000;
+              ? (pixel_upper_half ? read_fifo_read_data[31:16]
+                                  : read_fifo_read_data[15:0])
+              : 16'h0000;
+        write_protocol_error = write_queue_protocol_error ||
+                               adapter_read_protocol_error;
     end
 endmodule

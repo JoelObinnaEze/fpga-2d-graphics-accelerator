@@ -1,12 +1,14 @@
 `timescale 1ns/1ps
 
 module tb_framebuffer_read_path;
-    localparam int unsigned FRAME_PIXELS = 6;
-    localparam int unsigned FIFO_DEPTH = 4;
-    localparam int unsigned FIFO_LOW_WATER = 1;
-    localparam int unsigned BURST_PIXELS = 2;
+    localparam int unsigned FRAME_PIXELS = 8;
+    localparam int unsigned FIFO_DEPTH = 8;
+    localparam int unsigned FIFO_LOW_WATER = 4;
+    localparam int unsigned BURST_PIXELS = 4;
     localparam int unsigned WRITE_FIFO_DEPTH = 4;
-    localparam int unsigned FIFO_LEVEL_WIDTH = $clog2(FIFO_DEPTH + 1);
+    localparam int unsigned FIFO_WORD_DEPTH = FIFO_DEPTH / 2;
+    localparam int unsigned FIFO_LEVEL_WIDTH =
+        $clog2(FIFO_WORD_DEPTH + 1);
     localparam logic [21:0] BASE_ADDRESS = 22'd100;
 
     logic clk;
@@ -18,16 +20,17 @@ module tb_framebuffer_read_path;
     logic [FIFO_LEVEL_WIDTH-1:0] fifo_write_level;
     logic fifo_write_valid;
     logic fifo_write_ready;
-    logic [15:0] fifo_write_data;
-    logic consume_pixel;
+    logic [31:0] fifo_write_data;
     logic scanout_valid;
     logic scanout_ready;
     logic [21:0] scanout_pixel_address;
+    logic [7:0] scanout_data_len;
     logic memory_valid;
     logic memory_ready;
     logic [1:0] memory_operation;
     logic [31:0] memory_address;
     logic [15:0] memory_write_data;
+    logic [7:0] memory_data_len;
     logic renderer_write_valid;
     logic renderer_write_ready;
     logic [21:0] renderer_write_address;
@@ -45,6 +48,7 @@ module tb_framebuffer_read_path;
     logic adapter_response_ready;
     logic [31:0] adapter_response_data;
     logic write_committed;
+    logic read_protocol_error;
     logic controller_init_done;
     logic controller_busy_n;
     logic controller_ack;
@@ -56,7 +60,7 @@ module tb_framebuffer_read_path;
     logic [7:0] controller_data_len;
     logic [3:0] controller_data_mask;
     logic [31:0] controller_write_data;
-    int unsigned received_pixels;
+    int unsigned received_words;
     int unsigned committed_writes;
     int unsigned completion_count;
 
@@ -90,6 +94,7 @@ module tb_framebuffer_read_path;
         .request_valid(scanout_valid),
         .request_ready(scanout_ready),
         .request_pixel_address(scanout_pixel_address),
+        .request_data_len(scanout_data_len),
         .response_valid(adapter_response_valid),
         .response_ready(adapter_response_ready),
         .response_read_data(adapter_response_data)
@@ -117,7 +122,7 @@ module tb_framebuffer_read_path;
     );
 
     framebuffer_arbiter #(
-        .READ_FIFO_LOW_WATER(2),
+        .READ_FIFO_LOW_WATER(FIFO_LOW_WATER / 2),
         .MAX_CONSECUTIVE_WRITES(2)
     ) arbiter (
         .clk,
@@ -126,6 +131,7 @@ module tb_framebuffer_read_path;
         .scanout_valid,
         .scanout_ready,
         .scanout_address({10'd0, scanout_pixel_address}),
+        .scanout_data_len,
         .write_valid(queued_write_valid),
         .write_ready(arbiter_write_ready),
         .write_address({10'd0, queued_write_address}),
@@ -136,7 +142,8 @@ module tb_framebuffer_read_path;
         .memory_ready,
         .memory_operation,
         .memory_address,
-        .memory_write_data
+        .memory_write_data,
+        .memory_data_len
     );
 
     sdram_pixel_adapter adapter (
@@ -147,10 +154,12 @@ module tb_framebuffer_read_path;
         .request_operation(memory_operation),
         .request_pixel_address(memory_address[21:0]),
         .request_write_data(memory_write_data),
+        .request_data_len(memory_data_len),
         .response_valid(adapter_response_valid),
         .response_ready(adapter_response_ready),
         .response_read_data(adapter_response_data),
         .write_committed,
+        .read_protocol_error,
         .controller_init_done,
         .controller_busy_n,
         .controller_ack,
@@ -167,24 +176,21 @@ module tb_framebuffer_read_path;
     always_ff @(posedge clk) begin
         if (rst) begin
             fifo_write_level <= '0;
-            received_pixels <= 0;
+            received_words <= 0;
             committed_writes <= 0;
             completion_count <= 0;
         end else begin
             if (memory_valid && memory_address[31:22] != 0)
                 $fatal(1, "arbiter changed the 22-bit pixel address");
 
-            case ({fifo_write_valid && fifo_write_ready, consume_pixel})
-                2'b10: fifo_write_level <= fifo_write_level + 1'b1;
-                2'b01: fifo_write_level <= fifo_write_level - 1'b1;
-                default: fifo_write_level <= fifo_write_level;
-            endcase
-
             if (fifo_write_valid && fifo_write_ready) begin
-                if (fifo_write_data != 16'hA000 + 16'(received_pixels))
-                    $fatal(1, "read-path data mismatch at pixel %0d: got %04x",
-                           received_pixels, fifo_write_data);
-                received_pixels <= received_pixels + 1;
+                fifo_write_level <= fifo_write_level + 1'b1;
+                if (fifo_write_data !=
+                    {16'hA000 + 16'(2 * received_words + 1),
+                     16'hA000 + 16'(2 * received_words)})
+                    $fatal(1, "read-path data mismatch at word %0d: got %08x",
+                           received_words, fifo_write_data);
+                received_words <= received_words + 1;
             end
             if (write_committed)
                 committed_writes <= committed_writes + 1;
@@ -197,28 +203,26 @@ module tb_framebuffer_read_path;
         @(negedge clk);
         while (!renderer_write_ready)
             @(negedge clk);
-        renderer_write_address = 22'd1000 + 22'(write_offset);
-        renderer_write_data = 16'hB000 + 16'(write_offset);
+        renderer_write_address = 22'd1000 + write_offset;
+        renderer_write_data = 16'hB000 + write_offset[15:0];
         renderer_write_valid = 1'b1;
         @(posedge clk);
         #1;
         renderer_write_valid = 1'b0;
     endtask
 
-    task automatic service_read_pair(input int unsigned first_pixel_offset);
+    task automatic service_read_burst(input int unsigned first_pixel_offset);
         logic [21:0] expected_pixel_address;
-        logic [15:0] expected_lower;
-        logic [15:0] expected_upper;
         expected_pixel_address = BASE_ADDRESS + 22'(first_pixel_offset);
-        expected_lower = 16'hA000 + 16'(first_pixel_offset);
-        expected_upper = 16'hA000 + 16'(first_pixel_offset + 1);
+
         @(negedge clk);
         while (controller_read_n)
             @(negedge clk);
         if (!controller_write_n ||
             controller_address != expected_pixel_address[21:1] ||
-            controller_data_len != 0 || controller_data_mask != 0)
-            $fatal(1, "controller mapping mismatch for pixel address %0d",
+            controller_data_len != 8'(BURST_PIXELS / 2 - 1) ||
+            controller_data_mask != 0)
+            $fatal(1, "controller burst mapping mismatch at pixel %0d",
                    expected_pixel_address);
 
         controller_busy_n = 1'b0;
@@ -227,31 +231,35 @@ module tb_framebuffer_read_path;
         #1;
         controller_ack = 1'b0;
 
-        @(negedge clk);
-        controller_read_data = {expected_upper, expected_lower};
-        controller_read_valid = 1'b1;
-        @(posedge clk);
-        #1;
+        for (int word_index = 0; word_index < BURST_PIXELS / 2;
+             word_index++) begin
+            @(negedge clk);
+            controller_read_data = {
+                16'hA000 + 16'(first_pixel_offset + 2 * word_index + 1),
+                16'hA000 + 16'(first_pixel_offset + 2 * word_index)
+            };
+            controller_read_valid = 1'b1;
+            @(posedge clk);
+            #1;
+        end
         controller_read_valid = 1'b0;
 
         @(negedge clk);
         controller_busy_n = 1'b1;
     endtask
 
-    task automatic service_write(
-        input logic [21:0] write_offset,
-        input bit consume_during_write
-    );
+    task automatic service_write(input logic [21:0] write_offset);
         logic [21:0] expected_pixel_address;
         logic [15:0] expected_data;
         logic [3:0] expected_mask;
         logic [31:0] expected_write_data;
-        expected_pixel_address = 22'd1000 + 22'(write_offset);
-        expected_data = 16'hB000 + 16'(write_offset);
+        expected_pixel_address = 22'd1000 + write_offset;
+        expected_data = 16'hB000 + write_offset[15:0];
         expected_mask = expected_pixel_address[0] ? 4'b0011 : 4'b1100;
         expected_write_data = expected_pixel_address[0]
                             ? {expected_data, 16'd0}
                             : {16'd0, expected_data};
+
         @(negedge clk);
         while (controller_write_n)
             @(negedge clk);
@@ -260,32 +268,21 @@ module tb_framebuffer_read_path;
             controller_data_len != 0 ||
             controller_data_mask != expected_mask ||
             controller_write_data != expected_write_data)
-            $fatal(1, "controller write mapping mismatch for pixel address %0d",
+            $fatal(1, "controller write mapping mismatch at pixel %0d",
                    expected_pixel_address);
 
         controller_busy_n = 1'b0;
         controller_ack = 1'b1;
-        consume_pixel = consume_during_write;
         @(posedge clk);
         #1;
         controller_ack = 1'b0;
-        consume_pixel = 1'b0;
-
         @(negedge clk);
         controller_busy_n = 1'b1;
         @(posedge clk);
         #1;
         if (!write_committed)
-            $fatal(1, "SDRAM adapter did not commit renderer write %0d",
+            $fatal(1, "adapter did not commit renderer write %0d",
                    write_offset);
-    endtask
-
-    task automatic consume_one;
-        @(negedge clk);
-        consume_pixel = 1'b1;
-        @(posedge clk);
-        #1;
-        consume_pixel = 1'b0;
     endtask
 
     initial begin
@@ -295,7 +292,6 @@ module tb_framebuffer_read_path;
         renderer_write_address = '0;
         renderer_write_data = '0;
         fifo_write_ready = 1'b1;
-        consume_pixel = 1'b0;
         controller_init_done = 1'b0;
         controller_busy_n = 1'b1;
         controller_ack = 1'b0;
@@ -322,42 +318,26 @@ module tb_framebuffer_read_path;
                 enqueue_write(2);
             end
             begin
-                // The empty scanout FIFO forces both initial reads ahead of
-                // the queued renderer writes.
-                service_read_pair(0);
-                service_write(0, 1'b0);
-                wait (received_pixels == 2);
-                if (int'(fifo_write_level) != 2)
-                    $fatal(1, "initial scanout burst did not fill the FIFO");
-
-                // Rendering progresses while scanout is healthy. Consuming a
-                // pixel during the second write schedules the next packed-word
-                // read while the final queued write drains.
-                service_write(1, 1'b1);
-                service_write(2, 1'b0);
-                service_read_pair(2);
-                wait (received_pixels == 4);
-
-                if (int'(fifo_write_level) != 3)
-                    $fatal(1, "unexpected FIFO level after concurrent traffic");
-                consume_one();
-                consume_one();
-                service_read_pair(4);
-                wait (received_pixels == FRAME_PIXELS);
+                service_read_burst(0);
+                service_write(0);
+                service_write(1);
+                service_read_burst(4);
+                service_write(2);
             end
         join
 
         repeat (2) @(posedge clk);
 
         if (completion_count != 1 || active ||
-            received_pixels != FRAME_PIXELS)
+            received_words != FRAME_PIXELS / 2 ||
+            fifo_write_level != FIFO_LEVEL_WIDTH'(FIFO_WORD_DEPTH))
             $fatal(1, "integrated path did not complete the frame");
         if (!writes_committed || write_queue_count != 0 ||
             outstanding_write_count != 0 || committed_writes != 3 ||
-            write_protocol_error)
-            $fatal(1, "renderer writes did not drain and commit exactly once");
+            write_protocol_error || read_protocol_error)
+            $fatal(1, "renderer writes or burst reads did not drain cleanly");
 
-        $display("PASS: concurrent scanout/write queues through arbiter and SDRAM adapter");
+        $display("PASS: SDRAM read bursts and queued writes through the arbiter");
         $finish;
     end
 endmodule

@@ -12,10 +12,12 @@ module tb_sdram_pixel_adapter;
     logic [1:0] request_operation;
     logic [21:0] request_pixel_address;
     logic [15:0] request_write_data;
+    logic [7:0] request_data_len;
     logic response_valid;
     logic response_ready;
     logic [31:0] response_read_data;
     logic write_committed;
+    logic read_protocol_error;
     logic controller_init_done;
     logic controller_busy_n;
     logic controller_ack;
@@ -41,10 +43,12 @@ module tb_sdram_pixel_adapter;
         .request_operation,
         .request_pixel_address,
         .request_write_data,
+        .request_data_len,
         .response_valid,
         .response_ready,
         .response_read_data,
         .write_committed,
+        .read_protocol_error,
         .controller_init_done,
         .controller_busy_n,
         .controller_ack,
@@ -61,12 +65,14 @@ module tb_sdram_pixel_adapter;
     task automatic issue_request(
         input logic [1:0] operation,
         input logic [21:0] pixel_address,
-        input logic [15:0] write_data
+        input logic [15:0] write_data,
+        input logic [7:0] data_len
     );
         @(negedge clk);
         request_operation = operation;
         request_pixel_address = pixel_address;
         request_write_data = write_data;
+        request_data_len = data_len;
         request_valid = 1'b1;
         #1;
         if (!request_ready)
@@ -87,32 +93,32 @@ module tb_sdram_pixel_adapter;
         controller_busy_n = 1'b1;
     endtask
 
-    task automatic complete_read(input logic [31:0] read_data);
+    task automatic complete_read_burst(
+        input logic [31:0] first_read_data,
+        input int unsigned word_count
+    );
         @(negedge clk);
         controller_busy_n = 1'b0;
         controller_ack = 1'b1;
         @(posedge clk);
         #1;
         controller_ack = 1'b0;
-        @(negedge clk);
-        controller_read_data = read_data;
-        controller_read_valid = 1'b1;
-        @(posedge clk);
-        #1;
+        for (int word_index = 0; word_index < word_count; word_index++) begin
+            @(negedge clk);
+            controller_read_data = first_read_data + 32'(word_index);
+            controller_read_valid = 1'b1;
+            #1;
+            if (!response_valid ||
+                response_read_data != first_read_data + 32'(word_index))
+                $fatal(1, "burst response mismatch at word %0d", word_index);
+            @(posedge clk);
+            #1;
+        end
         controller_read_valid = 1'b0;
         @(negedge clk);
         controller_busy_n = 1'b1;
         @(posedge clk);
         #1;
-    endtask
-
-    task automatic retire_response;
-        response_ready = 1'b1;
-        @(posedge clk);
-        #1;
-        response_ready = 1'b0;
-        if (response_valid)
-            $fatal(1, "read response did not retire");
     endtask
 
     initial begin
@@ -121,7 +127,8 @@ module tb_sdram_pixel_adapter;
         request_operation = OP_READ;
         request_pixel_address = '0;
         request_write_data = '0;
-        response_ready = 1'b0;
+        request_data_len = '0;
+        response_ready = 1'b1;
         controller_init_done = 1'b0;
         controller_busy_n = 1'b1;
         controller_ack = 1'b0;
@@ -142,7 +149,7 @@ module tb_sdram_pixel_adapter;
             $fatal(1, "unsupported explicit refresh was accepted");
         request_valid = 1'b0;
 
-        issue_request(OP_WRITE, 22'd4, 16'h1234);
+        issue_request(OP_WRITE, 22'd4, 16'h1234, 8'd7);
         if (controller_write_n || !controller_read_n ||
             controller_address != 21'd2 || controller_data_len != 0 ||
             controller_data_mask != 4'b1100 ||
@@ -158,7 +165,7 @@ module tb_sdram_pixel_adapter;
         if (!write_committed)
             $fatal(1, "write completion was not reported");
 
-        issue_request(OP_WRITE, 22'd5, 16'habcd);
+        issue_request(OP_WRITE, 22'd5, 16'habcd, 8'd7);
         if (controller_address != 21'd2 ||
             controller_data_mask != 4'b0011 ||
             controller_write_data != 32'habcd_0000)
@@ -169,32 +176,17 @@ module tb_sdram_pixel_adapter;
         if (!write_committed)
             $fatal(1, "odd write completion was not reported");
 
-        issue_request(OP_READ, 22'd4, 16'd0);
+        issue_request(OP_READ, 22'd4, 16'd0, 8'd2);
         if (controller_read_n || !controller_write_n ||
-            controller_address != 21'd2 || controller_data_mask != 0)
+            controller_address != 21'd2 || controller_data_mask != 0 ||
+            controller_data_len != 2)
             $fatal(1, "read request mapping is incorrect");
 
-        complete_read(32'hdead_beef);
-        if (!response_valid || response_read_data != 32'hdead_beef ||
-            request_ready)
-            $fatal(1, "packed-word read response is incorrect");
+        complete_read_burst(32'hdead_beef, 3);
+        if (!request_ready || read_protocol_error)
+            $fatal(1, "burst read did not retire cleanly");
 
-        repeat (3) begin
-            @(posedge clk);
-            #1;
-            if (!response_valid || response_read_data != 32'hdead_beef)
-                $fatal(1, "stalled read response was not held stable");
-        end
-
-        retire_response();
-
-        issue_request(OP_READ, 22'd6, 16'd0);
-        complete_read(32'hcafe_5678);
-        if (!response_valid || response_read_data != 32'hcafe_5678)
-            $fatal(1, "second packed-word read response is incorrect");
-        retire_response();
-
-        $display("PASS: SDRAM word reads, pixel writes, completion, and response stalls");
+        $display("PASS: SDRAM burst reads, pixel writes, and completion");
         $finish;
     end
 endmodule

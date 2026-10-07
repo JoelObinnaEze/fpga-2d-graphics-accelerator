@@ -114,19 +114,20 @@ in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
 - Resolution and format: 640 x 480 RGB565, initialized to eight vertical color
   bars through the same queued write and real SDRAM commit path used by later
   renderers.
-- Scanout: 512-pixel dual-clock FIFO, 256-pixel refill threshold, 32-pixel
-  logical read bursts, VBlank-gated startup, and black fallback with a sticky
-  underflow indicator. Each 32-bit SDRAM read now supplies both packed RGB565
-  pixels to the FIFO, lower half first and upper half second.
+- Scanout: 256-word (512-pixel) dual-clock FIFO, 256-pixel refill threshold,
+  16-word (32-pixel) controller bursts, VBlank-gated startup, and black fallback
+  with a sticky underflow indicator. The controller streams each packed 32-bit
+  word into the FIFO; the pixel domain emits its lower RGB565 half first and its
+  upper half second.
 - Clocking: 25.2 MHz pixel clock, 126 MHz TMDS serializer clock, and the
   hardware-characterized 162 MHz controller/phase-11 SDRAM clocks.
 - Simulation: initialization, delayed commits, cross-domain prefetch, complete
   and repeated frames, backpressure, address carry boundaries, and forced
   underflow pass in the full self-checking suite.
-- Place-and-route timing: all setup, hold, recovery, and removal TNS values are
-  zero. Reported Fmax is 60.565 MHz for the 25.2 MHz pixel domain and
-  162.202 MHz for the 161.996 MHz controller constraint.
-- Utilization: 2,388 logic elements (12%), 956 registers (6%), four BSRAMs,
+- Place-and-route timing: all setup and hold TNS values are zero. Reported Fmax
+  is 65.733 MHz for the 25.2 MHz pixel domain and 162.722 MHz for the 161.996 MHz
+  controller constraint.
+- Utilization: 2,434 logic elements (12%), 938 registers (6%), four BSRAMs,
   two rPLLs, one CLKDIV, and four OSER10 serializers.
 - The first per-pixel-read candidate was programmed with user code `0x0000D8A8`.
   Physical testing showed moving RGB and all six LEDs on; LED4 therefore
@@ -140,13 +141,17 @@ in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
 - Physical testing of that revision still showed moving RGB and all six LEDs
   on. LED4 therefore remained asserted: halving the controller command count
   changed the corruption pattern but did not provide sustained scanout.
+- The burst-read revision uses the controller guide's `data_len + 1` transfer
+  rule to return 16 consecutive packed words per command. The full RTL and
+  RP2040 regression passes, place-and-route meets timing with zero TNS, and the
+  candidate was programmed into volatile SRAM on 2026-10-06 with user code
+  `0x0000BADE` and status code `0x00006020`.
 - Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
   LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
   underflow/protocol error, and LED5 at least one complete prefetch.
 
-The packed-word revision is simulation-, timing-, and programming-verified but
-failed the physical stability check. Stage 8 remains open while the read path
-is changed to use the controller's multi-word burst interface.
+The burst-read revision is simulation-, timing-, and programming-verified.
+Stage 8 remains open until its physical display and LED result is recorded.
 
 ## Reproduce
 
@@ -167,7 +172,7 @@ flash; removing power restores the prior FPGA configuration.
 
 ## Remaining Hardware Verification
 
-- Confirm that the newly programmed packed-word scanout shows stable color bars
+- Confirm that the newly programmed burst-read scanout shows stable color bars
   and record the six LED states after at least one complete frame. LED4 must be
   off; LED0, LED1, LED2, LED3, and LED5 should be on.
 - Board/schematic revision, remaining FPGA pin map, I/O standards, and voltages.

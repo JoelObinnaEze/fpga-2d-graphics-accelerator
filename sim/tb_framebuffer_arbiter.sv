@@ -11,6 +11,7 @@ module tb_framebuffer_arbiter;
     logic scanout_valid;
     logic scanout_ready;
     logic [31:0] scanout_address;
+    logic [7:0] scanout_data_len;
     logic write_valid;
     logic write_ready;
     logic [31:0] write_address;
@@ -22,6 +23,7 @@ module tb_framebuffer_arbiter;
     logic [1:0] memory_operation;
     logic [31:0] memory_address;
     logic [15:0] memory_write_data;
+    logic [7:0] memory_data_len;
 
     initial begin
         clk = 1'b0;
@@ -34,10 +36,11 @@ module tb_framebuffer_arbiter;
     ) dut (
         .clk, .rst, .read_fifo_level,
         .scanout_valid, .scanout_ready, .scanout_address,
+        .scanout_data_len,
         .write_valid, .write_ready, .write_address, .write_data,
         .refresh_valid, .refresh_ready,
         .memory_valid, .memory_ready, .memory_operation,
-        .memory_address, .memory_write_data
+        .memory_address, .memory_write_data, .memory_data_len
     );
 
     task automatic clear_inputs;
@@ -58,6 +61,7 @@ module tb_framebuffer_arbiter;
         rst = 1'b1;
         read_fifo_level = 16'd8;
         scanout_address = 32'h1000;
+        scanout_data_len = 8'd7;
         write_address = 32'h2000;
         write_data = 16'hbeef;
         memory_ready = 1'b0;
@@ -78,7 +82,8 @@ module tb_framebuffer_arbiter;
         @(posedge clk);
         #1;
         if (!memory_valid || memory_operation != OP_READ ||
-            memory_address != scanout_address)
+            memory_address != scanout_address ||
+            memory_data_len != scanout_data_len)
             $fatal(1, "low-water scanout request did not win");
         clear_inputs();
         retire_request();
@@ -94,7 +99,8 @@ module tb_framebuffer_arbiter;
         @(posedge clk);
         #1;
         if (!memory_valid || memory_operation != OP_WRITE ||
-            memory_address != write_address || memory_write_data != write_data)
+            memory_address != write_address || memory_write_data != write_data ||
+            memory_data_len != 0)
             $fatal(1, "renderer did not progress with a healthy read FIFO");
 
         // A stalled backend must hold its selected request and backpressure everyone.
@@ -106,7 +112,8 @@ module tb_framebuffer_arbiter;
             #1;
             if (!memory_valid || memory_operation != OP_WRITE ||
                 memory_address != write_address || memory_write_data != write_data ||
-                scanout_ready || write_ready || refresh_ready)
+                memory_data_len != 0 || scanout_ready || write_ready ||
+                refresh_ready)
                 $fatal(1, "memory request changed while stalled");
         end
         clear_inputs();
@@ -123,7 +130,8 @@ module tb_framebuffer_arbiter;
             $fatal(1, "refresh source handshake was incorrect");
         @(posedge clk);
         #1;
-        if (!memory_valid || memory_operation != OP_REFRESH)
+        if (!memory_valid || memory_operation != OP_REFRESH ||
+            memory_data_len != 0)
             $fatal(1, "refresh did not preempt traffic");
         clear_inputs();
         retire_request();
@@ -139,7 +147,9 @@ module tb_framebuffer_arbiter;
         @(posedge clk); #1;
         if (memory_operation != OP_WRITE) $fatal(1, "second write was not scheduled");
         @(posedge clk); #1;
-        if (memory_operation != OP_READ) $fatal(1, "write burst limit did not force a read");
+        if (memory_operation != OP_READ ||
+            memory_data_len != scanout_data_len)
+            $fatal(1, "write burst limit did not force a read burst");
 
         clear_inputs();
         @(posedge clk);

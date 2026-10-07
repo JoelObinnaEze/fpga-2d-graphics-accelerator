@@ -10,6 +10,7 @@ module framebuffer_arbiter #(
     input  logic scanout_valid,
     output logic scanout_ready,
     input  logic [31:0] scanout_address,
+    input  logic [7:0] scanout_data_len,
     input  logic write_valid,
     output logic write_ready,
     input  logic [31:0] write_address,
@@ -20,7 +21,8 @@ module framebuffer_arbiter #(
     input  logic memory_ready,
     output logic [1:0] memory_operation,
     output logic [31:0] memory_address,
-    output logic [15:0] memory_write_data
+    output logic [15:0] memory_write_data,
+    output logic [7:0] memory_data_len
 );
     localparam logic [1:0] OP_READ = 2'd0;
     localparam logic [1:0] OP_WRITE = 2'd1;
@@ -34,6 +36,7 @@ module framebuffer_arbiter #(
     logic [1:0] selected_operation;
     logic [31:0] selected_address;
     logic [15:0] selected_write_data;
+    logic [7:0] selected_data_len;
     logic force_scanout;
 
     always_comb begin
@@ -46,6 +49,7 @@ module framebuffer_arbiter #(
         selected_operation = OP_READ;
         selected_address = '0;
         selected_write_data = '0;
+        selected_data_len = '0;
         scanout_ready = 1'b0;
         write_ready = 1'b0;
         refresh_ready = 1'b0;
@@ -59,6 +63,7 @@ module framebuffer_arbiter #(
                 selected_valid = 1'b1;
                 selected_operation = OP_READ;
                 selected_address = scanout_address;
+                selected_data_len = scanout_data_len;
                 scanout_ready = 1'b1;
             end else if (write_valid) begin
                 selected_valid = 1'b1;
@@ -70,6 +75,7 @@ module framebuffer_arbiter #(
                 selected_valid = 1'b1;
                 selected_operation = OP_READ;
                 selected_address = scanout_address;
+                selected_data_len = scanout_data_len;
                 scanout_ready = 1'b1;
             end
         end
@@ -81,6 +87,7 @@ module framebuffer_arbiter #(
             memory_operation <= OP_READ;
             memory_address <= '0;
             memory_write_data <= '0;
+            memory_data_len <= '0;
             consecutive_writes <= '0;
         end else if (slot_available) begin
             memory_valid <= selected_valid;
@@ -88,6 +95,7 @@ module framebuffer_arbiter #(
                 memory_operation <= selected_operation;
                 memory_address <= selected_address;
                 memory_write_data <= selected_write_data;
+                memory_data_len <= selected_data_len;
                 if (selected_operation == OP_WRITE) begin
                     if (int'(consecutive_writes) < MAX_CONSECUTIVE_WRITES)
                         consecutive_writes <= consecutive_writes + 1'b1;

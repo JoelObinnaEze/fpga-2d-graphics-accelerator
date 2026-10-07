@@ -5,6 +5,7 @@ module tb_sdram_framebuffer_core;
     localparam int unsigned FRAME_HEIGHT = 2;
     localparam int unsigned FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT;
     localparam int unsigned READ_FIFO_DEPTH = 8;
+    localparam int unsigned READ_BURST_PIXELS = 4;
 
     logic controller_clk;
     logic controller_rst;
@@ -43,6 +44,7 @@ module tb_sdram_framebuffer_core;
     } model_state_t;
     model_state_t model_state;
     logic [4:0] pending_read_address;
+    logic [8:0] pending_read_words;
 
     initial begin
         controller_clk = 1'b0;
@@ -64,7 +66,7 @@ module tb_sdram_framebuffer_core;
         .FRAME_HEIGHT(FRAME_HEIGHT),
         .READ_FIFO_DEPTH(READ_FIFO_DEPTH),
         .READ_FIFO_LOW_WATER(4),
-        .READ_BURST_PIXELS(4),
+        .READ_BURST_PIXELS(READ_BURST_PIXELS),
         .WRITE_FIFO_DEPTH(4)
     ) dut (
         .controller_clk,
@@ -118,6 +120,7 @@ module tb_sdram_framebuffer_core;
             completed_prefetch_frames <= 0;
             model_state <= MODEL_IDLE;
             pending_read_address <= '0;
+            pending_read_words <= '0;
         end else begin
             controller_ack <= 1'b0;
             controller_read_valid <= 1'b0;
@@ -147,10 +150,13 @@ module tb_sdram_framebuffer_core;
                     end else if (!controller_read_n) begin
                         if (controller_address[20:5] != 0)
                             $fatal(1, "test controller read address overflow");
-                        if (controller_data_len != 0 ||
+                        if (controller_data_len !=
+                            8'(READ_BURST_PIXELS / 2 - 1) ||
                             controller_data_mask != 0)
                             $fatal(1, "core issued an invalid read request");
                         pending_read_address <= controller_address[4:0];
+                        pending_read_words <=
+                            {1'b0, controller_data_len} + 1'b1;
                         controller_read_count <= controller_read_count + 1;
                         controller_busy_n <= 1'b0;
                         controller_ack <= 1'b1;
@@ -162,7 +168,10 @@ module tb_sdram_framebuffer_core;
                     controller_busy_n <= 1'b0;
                     controller_read_data <= memory[pending_read_address];
                     controller_read_valid <= 1'b1;
-                    model_state <= MODEL_FINISH;
+                    pending_read_address <= pending_read_address + 1'b1;
+                    pending_read_words <= pending_read_words - 1'b1;
+                    if (pending_read_words == 1)
+                        model_state <= MODEL_FINISH;
                 end
 
                 MODEL_FINISH: begin
@@ -233,6 +242,12 @@ module tb_sdram_framebuffer_core;
             if (!scanout_enabled)
                 repeat (20) @(posedge pixel_clk);
         end
+        if (controller_read_count !=
+            READ_FIFO_DEPTH / READ_BURST_PIXELS)
+            $fatal(1,
+                   "initial FIFO fill used %0d commands instead of %0d bursts",
+                   controller_read_count,
+                   READ_FIFO_DEPTH / READ_BURST_PIXELS);
 
         consume_and_check_frame();
         if (scanout_underflow)
@@ -240,7 +255,8 @@ module tb_sdram_framebuffer_core;
 
         repeat (40) @(posedge pixel_clk);
         consume_and_check_frame();
-        if (scanout_underflow || controller_read_count < FRAME_PIXELS ||
+        if (scanout_underflow || controller_read_count <
+            2 * FRAME_PIXELS / READ_BURST_PIXELS ||
             completed_prefetch_frames == 0 || !prefetch_active)
             $fatal(1, "continuous prefetch did not deliver the second frame");
 
