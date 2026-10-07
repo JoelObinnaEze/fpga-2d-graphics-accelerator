@@ -308,6 +308,13 @@ Accepted reads count as reserved FIFO slots until their responses enter the
 FIFO, so a delayed response cannot overcommit capacity. The initial tunable
 values remain a 512-pixel FIFO, a 256-pixel low-water mark, and 32-pixel bursts.
 
+Renderer writes enter an ordered controller-domain FIFO as a 22-bit pixel
+address plus RGB565 data. Dequeuing into the arbiter does not mean the write is
+committed: a separate bounded counter tracks accepted writes until the SDRAM
+adapter reports completion. Frame presentation may use the resulting commit
+fence only when both the FIFO and outstanding count are zero. An unexpected
+completion latches a protocol error without corrupting that count.
+
 On scanout underflow, output a documented fallback pixel and latch an error. Never replay stale FIFO data as valid video.
 
 ## Frame-Presentation Contract

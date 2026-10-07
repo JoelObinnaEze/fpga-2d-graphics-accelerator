@@ -48,8 +48,9 @@ Verify: focused sprite test plus the full test script.
 - [x] Implement and verify a dual-clock FIFO for video/memory CDC.
 - [x] Implement bounded framebuffer read prefetch and verify it through the
   arbiter and SDRAM pixel adapter.
-- [ ] Implement the renderer write FIFO and backend drain path.
-- [ ] Prove scanout priority and renderer progress through the SDRAM adapter.
+- [x] Implement the renderer write FIFO, outstanding-write tracking, and
+  backend commit fence.
+- [x] Prove scanout priority and renderer progress through the SDRAM adapter.
 
 Verify: `pwsh -File scripts/test.ps1`, then the SDRAM build/program scripts.
 
