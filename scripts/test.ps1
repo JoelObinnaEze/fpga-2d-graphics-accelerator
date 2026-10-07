@@ -36,6 +36,8 @@ run_test tb_async_fifo sim/async_fifo.f
 run_test tb_framebuffer_read_prefetch sim/framebuffer_read_prefetch.f
 run_test tb_framebuffer_read_path sim/framebuffer_read_path.f
 run_test tb_framebuffer_write_queue sim/framebuffer_write_queue.f
+run_test tb_framebuffer_colorbar_writer sim/framebuffer_colorbar_writer.f
+run_test tb_sdram_framebuffer_core sim/sdram_framebuffer_core.f
 run_test tb_sdram_bist sim/sdram_bist.f
 run_test tb_sdram_pixel_adapter sim/sdram_pixel_adapter.f
 run_test tb_framebuffer_scanout sim/framebuffer.f

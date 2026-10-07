@@ -5,8 +5,9 @@
 // A start transfer schedules FRAME_PIXELS sequential RGB565 pixel reads from
 // start_pixel_address. Reads are grouped into bounded logical bursts. A new
 // burst starts only after the previous burst has drained and FIFO occupancy is
-// at or below FIFO_LOW_WATER. fifo_write_level and outstanding reads jointly
-// reserve every FIFO slot, so a delayed response cannot overflow the FIFO.
+// at or below FIFO_LOW_WATER. When the low-water mark plus a full burst fits,
+// that static bound reserves every delayed response slot; smaller FIFOs also
+// receive an exact capacity check.
 //
 // All request, response, and FIFO signals use valid/ready transfers. Payloads
 // remain stable while stalled. complete pulses only after the final response is
@@ -41,6 +42,9 @@ module framebuffer_read_prefetch #(
         BURST_PIXELS < 2 ? 1 : $clog2(BURST_PIXELS + 1);
     localparam int unsigned OUTSTANDING_WIDTH =
         FIFO_DEPTH < 2 ? 1 : $clog2(FIFO_DEPTH + 1);
+    localparam bit CAPACITY_CHECK_REQUIRED =
+        FIFO_LOW_WATER + BURST_PIXELS > FIFO_DEPTH;
+    localparam bit FULL_BURSTS_ONLY = FRAME_PIXELS % BURST_PIXELS == 0;
 
     typedef enum logic [1:0] {
         IDLE,
@@ -54,8 +58,10 @@ module framebuffer_read_prefetch #(
     logic [FRAME_COUNT_WIDTH-1:0] responses_received;
     logic [BURST_COUNT_WIDTH-1:0] burst_remaining;
     logic [OUTSTANDING_WIDTH-1:0] outstanding_reads;
+    logic outstanding_empty;
     logic request_fire;
     logic response_fire;
+    logic level_settling;
     int unsigned reserved_slots;
     int unsigned available_slots;
     int unsigned planned_burst;
@@ -79,14 +85,15 @@ module framebuffer_read_prefetch #(
             available_slots = FIFO_DEPTH - reserved_slots;
 
         planned_burst = BURST_PIXELS;
-        if (planned_burst > int'(pixels_remaining))
+        if (!FULL_BURSTS_ONLY && planned_burst > int'(pixels_remaining))
             planned_burst = int'(pixels_remaining);
-        if (planned_burst > available_slots)
+        if (CAPACITY_CHECK_REQUIRED && planned_burst > available_slots)
             planned_burst = available_slots;
 
         start_ready = !active;
         request_valid = active && state == ISSUE_BURST &&
-                        burst_remaining != 0 && available_slots != 0;
+                        burst_remaining != 0 &&
+                        (!CAPACITY_CHECK_REQUIRED || available_slots != 0);
         request_pixel_address = next_pixel_address;
         response_ready = active && fifo_write_ready;
         fifo_write_valid = active && response_valid;
@@ -105,8 +112,11 @@ module framebuffer_read_prefetch #(
             responses_received <= '0;
             burst_remaining <= '0;
             outstanding_reads <= '0;
+            outstanding_empty <= 1'b1;
+            level_settling <= 1'b0;
         end else begin
             complete <= 1'b0;
+            level_settling <= response_fire;
 
             if (start_valid && start_ready) begin
                 state <= WAIT_REFILL;
@@ -116,11 +126,12 @@ module framebuffer_read_prefetch #(
                 responses_received <= '0;
                 burst_remaining <= '0;
                 outstanding_reads <= '0;
+                outstanding_empty <= 1'b1;
             end else if (active) begin
                 case (state)
                     WAIT_REFILL: begin
-                        if (pixels_remaining != 0 &&
-                            outstanding_reads == 0 &&
+                        if (outstanding_empty &&
+                            !level_settling &&
                             int'(fifo_write_level) <= FIFO_LOW_WATER &&
                             planned_burst != 0) begin
                             burst_remaining <=
@@ -131,7 +142,19 @@ module framebuffer_read_prefetch #(
 
                     ISSUE_BURST: begin
                         if (request_fire) begin
-                            next_pixel_address <= next_pixel_address + 1'b1;
+                            // Pixel addresses increment every request, but the
+                            // word portion increments only after an odd pixel.
+                            // Splitting its carry at bit 11 keeps this counter
+                            // off the long 162 MHz carry path.
+                            next_pixel_address[0] <=
+                                ~next_pixel_address[0];
+                            if (next_pixel_address[0]) begin
+                                next_pixel_address[11:1] <=
+                                    next_pixel_address[11:1] + 1'b1;
+                                if (next_pixel_address[11:1] == 11'h7ff)
+                                    next_pixel_address[21:12] <=
+                                        next_pixel_address[21:12] + 1'b1;
+                            end
                             pixels_remaining <= pixels_remaining - 1'b1;
                             burst_remaining <= burst_remaining - 1'b1;
                             if (burst_remaining == 1)
@@ -153,9 +176,19 @@ module framebuffer_read_prefetch #(
                 end
 
                 case ({request_fire, response_fire})
-                    2'b10: outstanding_reads <= outstanding_reads + 1'b1;
-                    2'b01: outstanding_reads <= outstanding_reads - 1'b1;
-                    default: outstanding_reads <= outstanding_reads;
+                    2'b10: begin
+                        outstanding_reads <= outstanding_reads + 1'b1;
+                        outstanding_empty <= 1'b0;
+                    end
+                    2'b01: begin
+                        outstanding_reads <= outstanding_reads - 1'b1;
+                        if (outstanding_reads == 1)
+                            outstanding_empty <= 1'b1;
+                    end
+                    default: begin
+                        outstanding_reads <= outstanding_reads;
+                        outstanding_empty <= outstanding_empty;
+                    end
                 endcase
             end
         end

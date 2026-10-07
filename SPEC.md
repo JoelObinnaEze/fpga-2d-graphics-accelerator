@@ -150,6 +150,8 @@ Required command categories:
 | FPGA DVI volatile SRAM programming | `pwsh -File scripts/program_dvi_sram.ps1` |
 | FPGA SDRAM BIST synthesis/place-and-route | `pwsh -File scripts/build_sdram_bist.ps1` |
 | FPGA SDRAM BIST volatile SRAM programming | `pwsh -File scripts/program_sdram_bist_sram.ps1` |
+| FPGA SDRAM scanout synthesis/place-and-route | `pwsh -File scripts/build_sdram_scanout.ps1` |
+| FPGA SDRAM scanout volatile SRAM programming | `pwsh -File scripts/program_sdram_scanout_sram.ps1` |
 | Timing and utilization reports | `build/gowin/<target>/impl/pnr/` |
 | RP2040 firmware configure/build/flash | TBD in Stage 0 |
 

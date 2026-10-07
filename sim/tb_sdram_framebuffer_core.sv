@@ -1,0 +1,265 @@
+`timescale 1ns/1ps
+
+module tb_sdram_framebuffer_core;
+    localparam int unsigned FRAME_WIDTH = 8;
+    localparam int unsigned FRAME_HEIGHT = 2;
+    localparam int unsigned FRAME_PIXELS = FRAME_WIDTH * FRAME_HEIGHT;
+    localparam int unsigned READ_FIFO_DEPTH = 8;
+
+    logic controller_clk;
+    logic controller_rst;
+    logic pixel_clk;
+    logic pixel_rst;
+    logic active_video;
+    logic vblank_start;
+    logic [15:0] pixel;
+    logic framebuffer_ready;
+    logic initialization_active;
+    logic prefetch_active;
+    logic prefetch_complete;
+    logic scanout_enabled;
+    logic scanout_underflow;
+    logic write_protocol_error;
+    logic controller_init_done;
+    logic controller_busy_n;
+    logic controller_ack;
+    logic controller_read_valid;
+    logic [31:0] controller_read_data;
+    logic controller_write_n;
+    logic controller_read_n;
+    logic [20:0] controller_address;
+    logic [7:0] controller_data_len;
+    logic [3:0] controller_data_mask;
+    logic [31:0] controller_write_data;
+    logic [31:0] memory [0:31];
+    int unsigned controller_write_count;
+    int unsigned controller_read_count;
+    int unsigned completed_prefetch_frames;
+
+    typedef enum logic [1:0] {
+        MODEL_IDLE,
+        MODEL_READ_DATA,
+        MODEL_FINISH
+    } model_state_t;
+    model_state_t model_state;
+    logic [4:0] pending_read_address;
+
+    initial begin
+        controller_clk = 1'b0;
+        forever #1 controller_clk = ~controller_clk;
+    end
+
+    initial begin
+        pixel_clk = 1'b0;
+        forever #10 pixel_clk = ~pixel_clk;
+    end
+
+    initial begin
+        #200000;
+        $fatal(1, "timed out waiting for SDRAM framebuffer core");
+    end
+
+    sdram_framebuffer_core #(
+        .FRAME_WIDTH(FRAME_WIDTH),
+        .FRAME_HEIGHT(FRAME_HEIGHT),
+        .READ_FIFO_DEPTH(READ_FIFO_DEPTH),
+        .READ_FIFO_LOW_WATER(4),
+        .READ_BURST_PIXELS(4),
+        .WRITE_FIFO_DEPTH(4)
+    ) dut (
+        .controller_clk,
+        .controller_rst,
+        .pixel_clk,
+        .pixel_rst,
+        .active_video,
+        .vblank_start,
+        .pixel,
+        .framebuffer_ready,
+        .initialization_active,
+        .prefetch_active,
+        .prefetch_complete,
+        .scanout_enabled,
+        .scanout_underflow,
+        .write_protocol_error,
+        .controller_init_done,
+        .controller_busy_n,
+        .controller_ack,
+        .controller_read_valid,
+        .controller_read_data,
+        .controller_write_n,
+        .controller_read_n,
+        .controller_address,
+        .controller_data_len,
+        .controller_data_mask,
+        .controller_write_data
+    );
+
+    function automatic logic [15:0] expected_color(input int x);
+        case (x)
+            0: return 16'hffff;
+            1: return 16'hffe0;
+            2: return 16'h07ff;
+            3: return 16'h07e0;
+            4: return 16'hf81f;
+            5: return 16'hf800;
+            6: return 16'h001f;
+            default: return 16'h0000;
+        endcase
+    endfunction
+
+    always_ff @(posedge controller_clk) begin
+        if (controller_rst) begin
+            controller_busy_n <= 1'b1;
+            controller_ack <= 1'b0;
+            controller_read_valid <= 1'b0;
+            controller_read_data <= '0;
+            controller_write_count <= 0;
+            controller_read_count <= 0;
+            completed_prefetch_frames <= 0;
+            model_state <= MODEL_IDLE;
+            pending_read_address <= '0;
+        end else begin
+            controller_ack <= 1'b0;
+            controller_read_valid <= 1'b0;
+            if (prefetch_complete)
+                completed_prefetch_frames <= completed_prefetch_frames + 1;
+
+            case (model_state)
+                MODEL_IDLE: begin
+                    controller_busy_n <= 1'b1;
+                    if (!controller_write_n) begin
+                        if (controller_address[20:5] != 0)
+                            $fatal(1, "test controller write address overflow");
+                        if (controller_data_len != 0)
+                            $fatal(1, "core issued a non-single-word write");
+                        for (int byte_index = 0; byte_index < 4;
+                             byte_index++) begin
+                            if (!controller_data_mask[byte_index])
+                                memory[controller_address[4:0]]
+                                    [byte_index * 8 +: 8] <=
+                                    controller_write_data
+                                    [byte_index * 8 +: 8];
+                        end
+                        controller_write_count <= controller_write_count + 1;
+                        controller_busy_n <= 1'b0;
+                        controller_ack <= 1'b1;
+                        model_state <= MODEL_FINISH;
+                    end else if (!controller_read_n) begin
+                        if (controller_address[20:5] != 0)
+                            $fatal(1, "test controller read address overflow");
+                        if (controller_data_len != 0 ||
+                            controller_data_mask != 0)
+                            $fatal(1, "core issued an invalid read request");
+                        pending_read_address <= controller_address[4:0];
+                        controller_read_count <= controller_read_count + 1;
+                        controller_busy_n <= 1'b0;
+                        controller_ack <= 1'b1;
+                        model_state <= MODEL_READ_DATA;
+                    end
+                end
+
+                MODEL_READ_DATA: begin
+                    controller_busy_n <= 1'b0;
+                    controller_read_data <= memory[pending_read_address];
+                    controller_read_valid <= 1'b1;
+                    model_state <= MODEL_FINISH;
+                end
+
+                MODEL_FINISH: begin
+                    controller_busy_n <= 1'b1;
+                    model_state <= MODEL_IDLE;
+                end
+
+                default: model_state <= MODEL_IDLE;
+            endcase
+        end
+    end
+
+    task automatic pulse_vblank;
+        @(negedge pixel_clk);
+        vblank_start = 1'b1;
+        @(posedge pixel_clk);
+        #1;
+        vblank_start = 1'b0;
+    endtask
+
+    task automatic consume_and_check_frame;
+        for (int pixel_index = 0; pixel_index < FRAME_PIXELS;
+             pixel_index++) begin
+            @(negedge pixel_clk);
+            active_video = 1'b1;
+            #1;
+            if (pixel != expected_color(pixel_index % FRAME_WIDTH))
+                $fatal(1, "scanout pixel %0d was %04x, expected %04x",
+                       pixel_index, pixel,
+                       expected_color(pixel_index % FRAME_WIDTH));
+            @(posedge pixel_clk);
+            #1;
+        end
+        active_video = 1'b0;
+    endtask
+
+    initial begin
+        controller_rst = 1'b1;
+        pixel_rst = 1'b1;
+        active_video = 1'b0;
+        vblank_start = 1'b0;
+        controller_init_done = 1'b0;
+        for (int word_index = 0; word_index < 32; word_index++)
+            memory[word_index] = '0;
+
+        repeat (4) @(posedge controller_clk);
+        controller_rst = 1'b0;
+        repeat (4) @(posedge pixel_clk);
+        pixel_rst = 1'b0;
+        controller_init_done = 1'b1;
+
+        wait (framebuffer_ready);
+        if (controller_write_count != FRAME_PIXELS ||
+            initialization_active || write_protocol_error)
+            $fatal(1, "startup framebuffer writes did not commit exactly once");
+        for (int pixel_index = 0; pixel_index < FRAME_PIXELS;
+             pixel_index += 2) begin
+            if (memory[pixel_index / 2] !=
+                {expected_color((pixel_index + 1) % FRAME_WIDTH),
+                 expected_color(pixel_index % FRAME_WIDTH)})
+                $fatal(1, "packed framebuffer word %0d was %08x",
+                       pixel_index / 2, memory[pixel_index / 2]);
+        end
+
+        repeat (30) @(posedge pixel_clk);
+        while (!scanout_enabled) begin
+            pulse_vblank();
+            if (!scanout_enabled)
+                repeat (20) @(posedge pixel_clk);
+        end
+
+        consume_and_check_frame();
+        if (scanout_underflow)
+            $fatal(1, "first framebuffer scanout underflowed");
+
+        repeat (40) @(posedge pixel_clk);
+        consume_and_check_frame();
+        if (scanout_underflow || controller_read_count < 2 * FRAME_PIXELS ||
+            completed_prefetch_frames == 0 || !prefetch_active)
+            $fatal(1, "continuous prefetch did not deliver the second frame");
+
+        // Stop accepting new memory requests and consume buffered pixels until
+        // the documented black fallback and sticky underflow status appear.
+        controller_init_done = 1'b0;
+        for (int cycle = 0; cycle < 3 * READ_FIFO_DEPTH &&
+             !scanout_underflow; cycle++) begin
+            @(negedge pixel_clk);
+            active_video = 1'b1;
+            @(posedge pixel_clk);
+            #1;
+        end
+        @(negedge pixel_clk);
+        #1;
+        if (!scanout_underflow || pixel != 16'h0000)
+            $fatal(1, "scanout underflow did not latch black fallback");
+
+        $display("PASS: SDRAM initialization, dual-clock scanout, repeat, and underflow");
+        $finish;
+    end
+endmodule

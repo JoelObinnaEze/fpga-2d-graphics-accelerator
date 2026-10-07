@@ -67,6 +67,8 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Verify the 27 MHz clock pin, LED0 pin, JTAG enumeration, volatile SRAM
   programming, and physical LED blink.
 - [x] Verify 640 x 480 DVI/TMDS output with a physical monitor.
+- [x] Build and simulate the full SDRAM color-bar scanout candidate with clean
+  setup, hold, recovery, and removal timing.
 - [ ] Verify full SDRAM scanout.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 

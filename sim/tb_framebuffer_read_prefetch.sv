@@ -8,7 +8,8 @@ module tb_framebuffer_read_prefetch;
     localparam int unsigned CAPACITY_LIMITED_BURST =
         FIFO_DEPTH - FIFO_LOW_WATER;
     localparam int unsigned FIFO_LEVEL_WIDTH = $clog2(FIFO_DEPTH + 1);
-    localparam logic [21:0] BASE_ADDRESS = 22'd100;
+    // Cross the split-counter carry boundary (4095 -> 4096).
+    localparam logic [21:0] BASE_ADDRESS = 22'd4090;
 
     logic clk;
     logic rst;

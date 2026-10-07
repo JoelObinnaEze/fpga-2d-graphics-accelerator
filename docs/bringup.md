@@ -109,6 +109,35 @@ the LED build. The generated clocks are reported at exactly 126.000 MHz and
 The decision to use the vendor controller only at the SiP boundary is recorded
 in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
 
+## SDRAM Scanout Candidate (Not Yet Hardware-Verified)
+
+- Resolution and format: 640 x 480 RGB565, initialized to eight vertical color
+  bars through the same queued write and real SDRAM commit path used by later
+  renderers.
+- Scanout: 512-pixel dual-clock FIFO, 256-pixel refill threshold, 32-pixel
+  logical read bursts, VBlank-gated startup, and black fallback with a sticky
+  underflow indicator.
+- Clocking: 25.2 MHz pixel clock, 126 MHz TMDS serializer clock, and the
+  hardware-characterized 162 MHz controller/phase-11 SDRAM clocks.
+- Simulation: initialization, delayed commits, cross-domain prefetch, complete
+  and repeated frames, backpressure, address carry boundaries, and forced
+  underflow pass in the full self-checking suite.
+- Place-and-route timing: all setup, hold, recovery, and removal TNS values are
+  zero. Reported Fmax is 62.669 MHz for the 25.2 MHz pixel domain and
+  162.310 MHz for the 161.996 MHz controller constraint.
+- Utilization: 2,399 logic elements (12%), 912 registers (6%), four BSRAMs,
+  two rPLLs, one CLKDIV, and four OSER10 serializers.
+- Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
+  LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
+  underflow/protocol error, and LED5 at least one complete prefetch.
+
+This is a simulation- and timing-verified candidate only. It has not yet been
+programmed for monitor observation, so Stage 8 remains open. The current pixel
+adapter performs one controller read per RGB565 pixel even though two pixels
+share each 32-bit word; physical testing must confirm sustained bandwidth. If
+LED4 asserts or video is unstable, the next optimization is a word-pair read
+path that emits both pixels from each SDRAM response.
+
 ## Reproduce
 
 ```powershell
@@ -119,6 +148,8 @@ pwsh -File scripts/build_dvi.ps1
 pwsh -File scripts/program_dvi_sram.ps1
 pwsh -File scripts/build_sdram_bist.ps1
 pwsh -File scripts/program_sdram_bist_sram.ps1
+pwsh -File scripts/build_sdram_scanout.ps1
+pwsh -File scripts/program_sdram_scanout_sram.ps1
 ```
 
 The programming script uses SRAM operation 2 only. It does not write onboard
@@ -126,6 +157,8 @@ flash; removing power restores the prior FPGA configuration.
 
 ## Remaining Hardware Verification
 
+- Volatile-program the SDRAM scanout candidate, confirm stable color bars, and
+  record the six LED states after at least one complete frame.
 - Board/schematic revision, remaining FPGA pin map, I/O standards, and voltages.
 
 No hardware milestone is marked complete before these checks.

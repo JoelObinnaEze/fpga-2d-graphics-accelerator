@@ -16,6 +16,27 @@ module gowin_tmds_serializer (
     wire green_serial;
     wire blue_serial;
     wire clock_serial;
+    (* syn_preserve = 1 *) logic red_reset = 1'b1;
+    (* syn_preserve = 1 *) logic green_reset = 1'b1;
+    (* syn_preserve = 1 *) logic blue_reset = 1'b1;
+    (* syn_preserve = 1 *) logic clock_reset = 1'b1;
+
+    // Give each OSER10 a final, fanout-one reset stage. Reset assertion remains
+    // asynchronous; release is synchronized to FCLK and can be placed beside
+    // each I/O serializer, avoiding a board-wide half-cycle recovery path.
+    always_ff @(posedge serial_clk or posedge rst) begin
+        if (rst) begin
+            red_reset <= 1'b1;
+            green_reset <= 1'b1;
+            blue_reset <= 1'b1;
+            clock_reset <= 1'b1;
+        end else begin
+            red_reset <= 1'b0;
+            green_reset <= 1'b0;
+            blue_reset <= 1'b0;
+            clock_reset <= 1'b0;
+        end
+    end
 
     OSER10 red_serializer (
         .Q(red_serial),
@@ -24,7 +45,7 @@ module gowin_tmds_serializer (
         .D4(red_symbol[4]), .D5(red_symbol[5]),
         .D6(red_symbol[6]), .D7(red_symbol[7]),
         .D8(red_symbol[8]), .D9(red_symbol[9]),
-        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(rst)
+        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(red_reset)
     );
     defparam red_serializer.GSREN = "false";
     defparam red_serializer.LSREN = "true";
@@ -36,7 +57,7 @@ module gowin_tmds_serializer (
         .D4(green_symbol[4]), .D5(green_symbol[5]),
         .D6(green_symbol[6]), .D7(green_symbol[7]),
         .D8(green_symbol[8]), .D9(green_symbol[9]),
-        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(rst)
+        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(green_reset)
     );
     defparam green_serializer.GSREN = "false";
     defparam green_serializer.LSREN = "true";
@@ -48,7 +69,7 @@ module gowin_tmds_serializer (
         .D4(blue_symbol[4]), .D5(blue_symbol[5]),
         .D6(blue_symbol[6]), .D7(blue_symbol[7]),
         .D8(blue_symbol[8]), .D9(blue_symbol[9]),
-        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(rst)
+        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(blue_reset)
     );
     defparam blue_serializer.GSREN = "false";
     defparam blue_serializer.LSREN = "true";
@@ -59,7 +80,7 @@ module gowin_tmds_serializer (
         .Q(clock_serial),
         .D0(1'b0), .D1(1'b0), .D2(1'b0), .D3(1'b0), .D4(1'b0),
         .D5(1'b1), .D6(1'b1), .D7(1'b1), .D8(1'b1), .D9(1'b1),
-        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(rst)
+        .PCLK(pixel_clk), .FCLK(serial_clk), .RESET(clock_reset)
     );
     defparam clock_serializer.GSREN = "false";
     defparam clock_serializer.LSREN = "true";

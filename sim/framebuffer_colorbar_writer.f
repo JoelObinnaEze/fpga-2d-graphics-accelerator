@@ -1,0 +1,2 @@
+rtl/memory/framebuffer_colorbar_writer.sv
+sim/tb_framebuffer_colorbar_writer.sv
