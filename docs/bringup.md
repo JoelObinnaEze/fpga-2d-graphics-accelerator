@@ -137,13 +137,16 @@ in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
   pixels require exactly three SDRAM reads, including FIFO backpressure and an
   address carry boundary. It was programmed into volatile SRAM on 2026-10-06
   with user code `0x00003E55` and status code `0x00006020`.
+- Physical testing of that revision still showed moving RGB and all six LEDs
+  on. LED4 therefore remained asserted: halving the controller command count
+  changed the corruption pattern but did not provide sustained scanout.
 - Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
   LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
   underflow/protocol error, and LED5 at least one complete prefetch.
 
-The packed-word revision is simulation-, timing-, and programming-verified.
-Its monitor output and final LED state have not yet been observed, so Stage 8
-remains open pending the final physical check.
+The packed-word revision is simulation-, timing-, and programming-verified but
+failed the physical stability check. Stage 8 remains open while the read path
+is changed to use the controller's multi-word burst interface.
 
 ## Reproduce
 
