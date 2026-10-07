@@ -127,16 +127,19 @@ in `docs/decisions/0001-use-gowin-embedded-sdram-controller.md`.
   162.310 MHz for the 161.996 MHz controller constraint.
 - Utilization: 2,399 logic elements (12%), 912 registers (6%), four BSRAMs,
   two rPLLs, one CLKDIV, and four OSER10 serializers.
+- Volatile SRAM programming completed successfully on 2026-10-06. User code
+  was `0x0000D8A8`; status code was `0x00006020`.
 - Diagnostic LEDs, active low: LED0 reset released, LED1 controller initialized,
   LED2 framebuffer initialized and committed, LED3 scanout enabled, LED4 sticky
   underflow/protocol error, and LED5 at least one complete prefetch.
 
-This is a simulation- and timing-verified candidate only. It has not yet been
-programmed for monitor observation, so Stage 8 remains open. The current pixel
-adapter performs one controller read per RGB565 pixel even though two pixels
-share each 32-bit word; physical testing must confirm sustained bandwidth. If
-LED4 asserts or video is unstable, the next optimization is a word-pair read
-path that emits both pixels from each SDRAM response.
+This is a simulation-, timing-, and programming-verified candidate only. Its
+monitor output and final LED state have not yet been observed, so Stage 8
+remains open. The current pixel adapter performs one controller read per RGB565
+pixel even though two pixels share each 32-bit word; physical testing must
+confirm sustained bandwidth. If LED4 asserts or video is unstable, the next
+optimization is a word-pair read path that emits both pixels from each SDRAM
+response.
 
 ## Reproduce
 

@@ -69,6 +69,7 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Verify 640 x 480 DVI/TMDS output with a physical monitor.
 - [x] Build and simulate the full SDRAM color-bar scanout candidate with clean
   setup, hold, recovery, and removal timing.
+- [x] Volatile-program the SDRAM scanout candidate successfully.
 - [ ] Verify full SDRAM scanout.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 
