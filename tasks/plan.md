@@ -42,3 +42,25 @@ Each item is a self-checking vertical slice. All ordered hardware arrived by
 - Command path: malformed/backpressured SPI traffic never loses a command.
 - Memory: timing model passes initialization, refresh, bursts, and arbitration.
 - Hardware: programming, display, memory readback, and Pong measurements recorded.
+
+## Final Demo Slices
+
+1. Integrate front/back SDRAM ownership into the verified scanout core. A
+   presentation must wait for committed renderer writes and a quiescent old
+   prefetch, flush stale FIFO words, restart from the new front buffer, and
+   resume during vertical blanking.
+2. Add a controller-domain graphics command engine that executes `CLEAR` and
+   `DRAW_RECT`, preserves command ordering, converts coordinates to draw-buffer
+   pixel addresses, and hands `PRESENT` to the frame presenter. Keep the tested
+   sprite command interface available as the next renderer dispatch path.
+3. Connect the tested oversampled SPI receiver, decoder, and command FIFO to the
+   graphics engine. Expose packet capacity on a dedicated READY pin and report
+   busy, protocol-error, and presentation-pending status on MISO.
+4. Build a Pico SDK 2.3.1 firmware target for autonomous Pong. Use RP2040 SPI0
+   at 8 MHz with manual per-packet chip select and wait for FPGA READY before
+   every packet.
+5. Synthesize, close timing, volatile-program both boards, verify moving Pong,
+   and record utilization, bandwidth, throughput, and all error indications.
+
+Dependency order is 1 -> 2 -> 3 -> 4 -> 5. Each slice must pass a focused
+self-checking test and be committed before the next slice starts.

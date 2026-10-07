@@ -72,6 +72,13 @@ Verify: delayed-write, missed-VBlank, consecutive-present, and reset tests.
 - [x] Volatile-program the SDRAM scanout candidate successfully.
 - [x] Verify full SDRAM scanout with stable color bars and no underflow/protocol
   error indication.
+- [ ] Integrate and verify front/back SDRAM presentation with stale-read FIFO
+  flushing and VBlank-safe scanout restart.
+- [ ] Execute clear, rectangle, and present commands through one ordered graphics
+  command engine into the SDRAM write queue.
+- [ ] Connect the SPI receiver, decoder, command FIFO, status, and READY pin to
+  the graphics engine and verify the end-to-end command path.
+- [ ] Build Pico SDK 2.3.1 autonomous Pong firmware for the selected SPI0 wiring.
 - [ ] Run Pong and record timing, utilization, bandwidth, and error counters.
 
 Verify: reproducible hardware procedure and saved reports.
