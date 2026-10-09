@@ -1,1 +1,12 @@
 build/
+graphify-out/
+
+# Local simulation and tool output
+*.fst
+*.log
+*.vcd
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
