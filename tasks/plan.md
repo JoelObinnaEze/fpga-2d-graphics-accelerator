@@ -9,7 +9,8 @@
 - Use ready/valid interfaces and keep rendering independent of physical SDRAM.
 - Use Gowin's embedded SDRAM controller only at the fixed SiP boundary; keep
   project scheduling, buffering, scanout, and rendering behind its user port.
-- Use Pico SDK 2.3.1, SPI mode 0 at an initial 8 MHz, and Pong for the demo.
+- Use Pico SDK 2.3.1, SPI mode 0 at a 1 MHz jumper-wire bring-up rate, and Pong
+  for the demo.
 
 ## Build Order
 
@@ -57,7 +58,7 @@ Each item is a self-checking vertical slice. All ordered hardware arrived by
    graphics engine. Expose packet capacity on a dedicated READY pin and report
    busy, protocol-error, and presentation-pending status on MISO.
 4. Build a Pico SDK 2.3.1 firmware target for autonomous Pong. Use RP2040 SPI0
-   at 8 MHz with manual per-packet chip select and wait for FPGA READY before
+   at 1 MHz with manual per-packet chip select and wait for FPGA READY before
    every packet.
 5. Synthesize, close timing, volatile-program both boards, verify moving Pong,
    and record utilization, bandwidth, throughput, and all error indications.

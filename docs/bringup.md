@@ -196,8 +196,10 @@ proceeds to Pong integration.
   `0x13` and zero READY timeouts. This verifies sustained RP2040-to-FPGA command
   traffic after recovery from an earlier sticky protocol fault.
 
-Visual confirmation of moving Pong after the corrected firmware load remains
-pending.
+Joel visually confirmed moving Pong on the monitor after the corrected firmware
+load on 2026-10-08. The final diagnostic state also matched expectations:
+LED0, LED1, LED2, LED3, and LED5 on, with LED4 off. This completes physical
+Pong validation without a live underflow or protocol-error indication.
 
 ## Reproduce
 
