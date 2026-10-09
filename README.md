@@ -193,3 +193,7 @@ vendor/gowin/      Documented Gowin SDRAM controller boundary
 ## Project status
 
 The final Tang Nano 20K image, SDRAM framebuffer and scanout, RP2040 SPI command link, rectangle rendering, VBlank-safe presentation, and autonomous Pong demo are verified in simulation and on physical hardware. Sprite rendering is self-checking in simulation but remains outside the final hardware dispatch path.
+
+## License
+
+Released under the [MIT License](LICENSE).
