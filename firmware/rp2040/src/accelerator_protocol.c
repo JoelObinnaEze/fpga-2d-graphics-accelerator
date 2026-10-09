@@ -2,6 +2,10 @@
 
 #include <string.h>
 
+bool accel_status_is_compatible(uint8_t status) {
+    return (status & ACCEL_STATUS_VERSION_MASK) == ACCEL_STATUS_VERSION_1;
+}
+
 static uint8_t crc8(const uint8_t *data, size_t length) {
     uint8_t crc = 0;
 

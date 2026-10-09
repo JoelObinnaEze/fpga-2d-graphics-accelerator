@@ -7,6 +7,7 @@
 
 typedef struct {
     uint8_t last_status;
+    bool protocol_error_seen;
     uint32_t packets_sent;
     uint32_t ready_timeouts;
     uint32_t status_errors;

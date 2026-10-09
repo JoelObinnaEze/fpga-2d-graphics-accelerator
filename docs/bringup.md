@@ -22,7 +22,8 @@
 - Simulation/lint: Verilator 5.050 through MSYS2 UCRT64.
 - FPGA tools: Gowin EDA Education 1.9.11.03.
 - Firmware: Raspberry Pi Pico SDK 2.3.1, generic RP2040 target.
-- Host link: SPI mode 0, MSB first, initial 8 MHz; final maximum is measured.
+- Host link: SPI mode 0, MSB first, 1 MHz jumper-wire bring-up rate; final
+  maximum is measured.
 - Demo: Pong.
 
 ## Sources
@@ -159,9 +160,10 @@ proceeds to Pong integration.
 
 ## Host Command Link and Pong Firmware
 
-- SPI mode 0, MSB first, 8 MHz, one command packet per active-low chip-select
+- SPI mode 0, MSB first, 1 MHz, one command packet per active-low chip-select
   interval. Firmware waits for the separate active-high READY signal before
-  every packet and validates the version/error status returned on MISO.
+  every packet, validates the protocol version returned on MISO, and reports a
+  sticky FPGA protocol-error indication without deadlocking future packets.
 - The final pin harness is:
 
 | RP2040 | Direction at RP2040 | Signal | Tang Nano 20K | FPGA pin |
@@ -188,10 +190,14 @@ proceeds to Pong integration.
   generic `pico` RP2040 board. It renders CLEAR, two paddles, a ball, and
   PRESENT at approximately 60 Hz, reports link counters over USB serial, and
   produces `build/pico/fpga_pong/fpga_pong.uf2`.
+- On 2026-10-08 the corrected UF2 was loaded over USB and the FPGA was
+  reprogrammed in volatile SRAM. USB serial showed the autonomous loop advance
+  from frame 300 / packet 1500 to frame 360 / packet 1800, with current status
+  `0x13` and zero READY timeouts. This verifies sustained RP2040-to-FPGA command
+  traffic after recovery from an earlier sticky protocol fault.
 
-Hardware Pong verification remains pending. Wire only while both boards are
-unpowered, reconnect both USB cables, volatile-program the FPGA, then hold the
-RP2040 BOOTSEL button while connecting/resetting it and run the flash command.
+Visual confirmation of moving Pong after the corrected firmware load remains
+pending.
 
 ## Reproduce
 

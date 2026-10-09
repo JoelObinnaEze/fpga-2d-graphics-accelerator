@@ -81,7 +81,13 @@ int main(void) {
 
     assert(accel_encode_clear(NULL, sizeof packet, 0, 0) == 0);
     assert(accel_encode_rect(packet, ACCEL_PACKET_MAX_SIZE - 1u, 0, 0, 0, 0, 0, 0) == 0);
+    assert(accel_status_is_compatible(ACCEL_STATUS_VERSION_1 | ACCEL_STATUS_READY));
+    assert(accel_status_is_compatible(ACCEL_STATUS_VERSION_1 |
+                                      ACCEL_STATUS_READY |
+                                      ACCEL_STATUS_PROTOCOL_ERROR));
+    assert(!accel_status_is_compatible(ACCEL_STATUS_READY));
+    assert(!accel_status_is_compatible(0x20u | ACCEL_STATUS_READY));
 
-    puts("PASS: RP2040 command packet encoding");
+    puts("PASS: RP2040 command packet encoding and status compatibility");
     return 0;
 }

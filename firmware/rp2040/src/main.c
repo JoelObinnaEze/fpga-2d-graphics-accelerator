@@ -31,7 +31,7 @@ int main(void) {
     accel_link_init(&link);
     pong_init(&game);
 
-    printf("FPGA Pong: SPI0 8 MHz, GP0/1/2/3/4 MISO/CS/SCLK/MOSI/READY\n");
+    printf("FPGA Pong: SPI0 1 MHz, GP0/1/2/3/4 MISO/CS/SCLK/MOSI/READY\n");
     absolute_time_t next_frame = get_absolute_time();
 
     while (true) {

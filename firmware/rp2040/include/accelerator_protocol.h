@@ -1,6 +1,7 @@
 #ifndef ACCELERATOR_PROTOCOL_H
 #define ACCELERATOR_PROTOCOL_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -20,6 +21,8 @@ enum accel_opcode {
     ACCEL_OP_DRAW_SPRITE = 0x03,
     ACCEL_OP_PRESENT = 0x04,
 };
+
+bool accel_status_is_compatible(uint8_t status);
 
 size_t accel_encode_clear(
     uint8_t *packet, size_t capacity, uint8_t sequence, uint16_t color

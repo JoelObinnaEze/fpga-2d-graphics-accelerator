@@ -5,13 +5,14 @@
 - SPI mode 0: clock idle low, sample MOSI on rising edges, change MISO on falling edges.
 - Bytes are sent most-significant bit first.
 - Each active-low chip-select interval contains exactly one packet.
-- Initial SCLK is 8 MHz. Raise it only after CDC and hardware measurements pass.
+- Initial SCLK is 1 MHz for reliable jumper-wire bring-up. Raise it only after
+  CDC and hardware measurements pass.
 - A separate active-high `READY` GPIO is sampled before chip select is asserted.
   `READY` guarantees room for one complete command; it never changes the packet
   already in flight and the FPGA never silently drops that packet.
 - The FPGA samples synchronized SPI inputs in the 162 MHz controller-clock
   domain. The controller clock must remain at least 8 times faster than SCLK;
-  the selected 8 MHz SCLK has a 20.25x margin. Any clock change must preserve
+  the selected 1 MHz SCLK has a 162x margin. Any clock change must preserve
   this bound.
 
 ## Packet
