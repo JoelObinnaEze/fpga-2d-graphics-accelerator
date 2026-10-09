@@ -1,8 +1,10 @@
 # Build Specification: FPGA 2D Graphics Accelerator and Memory System
 
-Status: Approved; implementation in progress  
-Owner: Joel Obinna-Eze  
-Last updated: 2026-10-06
+Status: Implemented and hardware-validated
+
+Owner: Joel Obinna-Eze
+
+Last updated: 2026-10-08
 
 ## Objective
 
@@ -117,12 +119,14 @@ Selected stack:
   2,097,152 words are exposed through a 21-bit word address.
 - Input clock: onboard 27 MHz crystal; generated clocks remain board-verified values.
 - Video: onboard HDMI connector carrying DVI-compatible 640 x 480p60 output.
-- Host board: generic RP2040 board, SPI mode 0, MSB first, initially 8 MHz.
+- Host board: Raspberry Pi Pico-class RP2040 board, SPI mode 0, MSB first,
+  hardware-validated at 1 MHz over jumper wires.
 - FPGA implementation: Gowin EDA Education 1.9.11.03 on Windows 11.
 - RTL: synthesizable SystemVerilog.
 - Simulation/lint: Verilator 5.050 installed through MSYS2 UCRT64.
 - Firmware: C/C++ with Raspberry Pi Pico SDK 2.3.1 and CMake.
-- Debug: USB logic analyzer and board-visible test patterns where available.
+- Debug: USB serial, onboard LEDs, board-visible test patterns, and
+  self-checking simulation. No oscilloscope or logic analyzer was used.
 
 Before board-specific RTL or constraints, record in `docs/bringup.md`:
 
